@@ -471,6 +471,9 @@ class AgentPreset:
             agent_class (Type[Agent]): The class of the agent.
             default_params ([type]): The default parameters associated with
                 this preset.
+
+        To see more info about the parameters, consult the docstring of
+        ``self.agent_class``.
         """
         self.default_params = default_params
         self.agent_class = agent_class

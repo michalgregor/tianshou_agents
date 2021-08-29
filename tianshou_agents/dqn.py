@@ -68,8 +68,10 @@ class DQNAgent(OffPolicyAgent):
                 Defaults to None, which means an empty dictionary.
 
         For additional arguments that need to (or can optionally) be supplied
-        as keyword arguments, see ``Agent`` and ``OffPolicyAgent``, or
-        better still use and modify one of the provided presets.
+        as keyword arguments, see ``tianshou_agents.Agent`` and
+        ``tianshou_agents.OffPolicyAgent``, or better still use and modify
+        one of the provided presets.
+        
         """
         policy_kwargs = locals().copy()
         del policy_kwargs['self']
