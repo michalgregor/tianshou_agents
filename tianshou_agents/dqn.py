@@ -201,7 +201,7 @@ dqn_simple_hyperparameters = {
     'prefill_steps': None,
     # general
     'train_envs': 16,
-    'test_envs': 10,
+    'test_envs': 1,
     'train_env_class': DummyVectorEnv,
     'test_env_class': DummyVectorEnv,
     'episode_per_test': None,
@@ -210,7 +210,7 @@ dqn_simple_hyperparameters = {
     'step_per_epoch': 80000,
     'step_per_collect': None,
     'update_per_collect': 1.,
-    'batch_size': 256,
+    'batch_size': 128,
     'logdir': 'log',
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'train_callbacks': None,
