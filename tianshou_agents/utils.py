@@ -81,4 +81,4 @@ class AgentLogger(BasicLogger):
         ):
             return epoch, env_step, gradient_step
         else:
-            return super().restore_data()
+            return (0, 0, 0)
