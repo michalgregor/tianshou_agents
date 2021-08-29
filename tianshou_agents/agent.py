@@ -258,7 +258,7 @@ class Agent:
 
         if isinstance(train_envs, int):
             if train_env_class is None:
-                train_env_class = DummyVectorEnv if len(train_envs) == 1 else SubprocVectorEnv
+                train_env_class = DummyVectorEnv if train_envs == 1 else SubprocVectorEnv
 
             self.train_envs = train_env_class(
                 [task for _ in range(train_envs)]
@@ -270,7 +270,7 @@ class Agent:
 
         if isinstance(test_envs, int):
             if test_env_class is None:
-                test_env_class = DummyVectorEnv if len(test_envs) == 1 else SubprocVectorEnv
+                test_env_class = DummyVectorEnv if test_envs == 1 else SubprocVectorEnv
 
             self.test_envs = test_env_class(
                 [test_task for _ in range(test_envs)]
