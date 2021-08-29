@@ -121,6 +121,8 @@ class SACAgent(OffPolicyAgent):
             deterministic_eval=deterministic_eval
         )
 
+# the classic preset
+
 sac_classic_hyperparameters = {
     # sac
     'noise_std': 1.2,
@@ -172,3 +174,57 @@ sac_classic_hyperparameters = {
 }
 
 sac_classic = AgentPreset(SACAgent, sac_classic_hyperparameters)
+
+# the pybullet preset
+
+sac_pybullet_hyperparameters = {
+    # sac
+    'noise_std': 1.2,
+    'gamma': 0.99,
+    'tau': 0.005,
+    'auto_alpha': True,
+    'alpha': 0.2,
+    'reward_normalization': False,
+    'estimation_step': 1,
+    'deterministic_eval': True,
+    'actor': None,
+    'actor_params': dict(hidden_sizes=[256, 256]),
+    'actor_optim': None,
+    'actor_optim_params': dict(lr=1e-3),
+    'critic1': None,
+    'critic1_params': dict(hidden_sizes=[256, 256]),
+    'critic1_optim': None,
+    'critic1_optim_params': dict(lr=1e-3),
+    'critic2': None,
+    'critic2_params': dict(hidden_sizes=[256, 256]),
+    'critic2_optim': None,
+    'critic2_optim_params': dict(lr=1e-3),
+    'alpha_optim': None,
+    'alpha_optim_params': dict(lr=3e-4),
+    # replay buffer
+    'replay_buffer': 1000000,
+    'prefill_steps': 10000,
+    # general
+    'train_envs': 1,
+    'test_envs': 10,
+    'train_env_class': None,
+    'test_env_class': None,
+    'episode_per_test': None,
+    'seed': None,
+    'max_epoch': 200,
+    'step_per_epoch': 5000,
+    'step_per_collect': None,
+    'update_per_step': None,
+    'batch_size': 256,
+    'logdir': 'log',
+    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+    'train_callbacks': None,
+    'test_callbacks': None,
+    'train_collector': None,
+    'test_collector': None,
+    'exploration_noise_train': True,
+    'exploration_noise_test': True,
+    'task': None
+}
+
+sac_pybullet = AgentPreset(SACAgent, sac_pybullet_hyperparameters)
