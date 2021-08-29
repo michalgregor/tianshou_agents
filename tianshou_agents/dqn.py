@@ -196,7 +196,7 @@ dqn_simple_hyperparameters = {
     'replay_buffer': 1000000,
     'prefill_steps': None,
     # general
-    'train_envs': 16,
+    'train_envs': 1,
     'test_envs': 1,
     'train_env_class': DummyVectorEnv,
     'test_env_class': DummyVectorEnv,
