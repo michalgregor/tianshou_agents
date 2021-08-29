@@ -1,6 +1,7 @@
 from .agent import AgentPreset, OffPolicyAgent
 from .schedule import Schedule, ConstSchedule, ExponentialSchedule
 from .callback import ScheduleCallback
+from .network import MLP
 from tianshou.policy import DQNPolicy
 from tianshou.env import DummyVectorEnv
 from typing import Any, Optional, Union, Callable, Dict
@@ -71,7 +72,7 @@ class DQNAgent(OffPolicyAgent):
         as keyword arguments, see ``tianshou_agents.Agent`` and
         ``tianshou_agents.OffPolicyAgent``, or better still use and modify
         one of the provided presets.
-        
+
         """
         policy_kwargs = locals().copy()
         del policy_kwargs['self']
@@ -123,7 +124,9 @@ class DQNAgent(OffPolicyAgent):
             self.eps_test = eps_test(self.max_epoch, self.step_per_epoch)
 
         self.test_callbacks.append(ScheduleCallback(self.policy.set_eps, self.eps_test))
-        
+
+# classic
+
 dqn_classic_hyperparameters = {
     # dqn
     'is_double': True,
@@ -136,6 +139,7 @@ dqn_classic_hyperparameters = {
     'reward_normalization': False,
     'qnetwork': None,
     'qnetwork_params': dict(
+        model=MLP,
         hidden_sizes=[128, 128],
         dueling_param=(
             {"hidden_sizes": [128, 128]}, # Q_param
@@ -172,3 +176,51 @@ dqn_classic_hyperparameters = {
 }
 
 dqn_classic = AgentPreset(DQNAgent, dqn_classic_hyperparameters)
+
+# simple
+
+dqn_simple_hyperparameters = {
+    # dqn
+    'is_double': True,
+    'eps_test': 0.01,
+    'eps_train': lambda max_epoch, step_per_epoch: ExponentialSchedule(
+        max_epoch*step_per_epoch*0.5, 0.73, 0.1),
+    'gamma': 0.99,
+    'target_update_freq': 500,
+    'estimation_step': 1,
+    'reward_normalization': False,
+    'qnetwork': None,
+    'qnetwork_params': dict(
+        model=MLP,
+        hidden_sizes=[128, 128]
+    ),
+    'optim': None,
+    'optim_params': dict(lr=0.013),
+    # replay buffer
+    'replay_buffer': 1000000,
+    'prefill_steps': None,
+    # general
+    'train_envs': 16,
+    'test_envs': 10,
+    'train_env_class': DummyVectorEnv,
+    'test_env_class': DummyVectorEnv,
+    'episode_per_test': None,
+    'seed': None,
+    'max_epoch': 10,
+    'step_per_epoch': 80000,
+    'step_per_collect': None,
+    'update_per_step': None,
+    'batch_size': 128,
+    'logdir': 'log',
+    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+    'train_callbacks': None,
+    'test_callbacks': None,
+    'train_collector': None,
+    'test_collector': None,
+    'exploration_noise_train': True,
+    'exploration_noise_test': True,
+    'task': None,
+    'stop_criterion': True
+}
+
+dqn_simple = AgentPreset(DQNAgent, dqn_simple_hyperparameters)
