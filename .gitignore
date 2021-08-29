@@ -1,0 +1,10 @@
+/.cache/*
+/.eggs/*
+/UNKNOWN*
+/build/*
+/dist/*
+/log/*
+**/__pycache__/*
+*.egg-info/*
+*.pyc
+*.vscode/**
