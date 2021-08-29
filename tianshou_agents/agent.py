@@ -24,7 +24,7 @@ class Agent:
         replay_buffer: Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]] = 1000000,
         step_per_epoch: int = 10000,
         step_per_collect: Optional[int] = None,
-        update_per_step: Optional[float] = None,
+        update_per_collect: Optional[float] = 1.,
         exploration_noise_train: bool = True,
         exploration_noise_test: bool = True,
         train_env_class: Optional[Type[BaseVectorEnv]] = None,
@@ -87,13 +87,9 @@ class Agent:
                 network update repeatly in each epoch. Defaults to ``None``, 
                 which means that ``step_per_collect`` is the same as the
                 number of training environments.
-            update_per_step (float, optional): The number of times the policy network
-                would be updated per transition after (``step_per_collect``)
-                transitions are collected, e.g., if ``update_per_step`` set to
-                0.3, and ``step_per_collect`` is 256, the policy will be updated
-                ``round(256 * 0.3 = 76.8) = 77`` times after 256 transitions are
-                collected by the collector. Defaults to ``None``, which means
-                ``update_per_step = 1 / step_per_collect``.
+            update_per_collect (float, optional): The number of times the policy
+                network will be updated for each collect (collection of
+                experience from the environments).
             exploration_noise_train (bool, optional): Determines whether, during
                 training, the action needs to be modified with the corresponding
                 policy's exploration noise. If so, ``policy.exploration_noise(act, batch)``
@@ -161,7 +157,7 @@ class Agent:
         self.max_epoch = max_epoch
         self.step_per_epoch = step_per_epoch
         self.step_per_collect = step_per_collect
-        self.update_per_step = update_per_step
+        self.update_per_collect = update_per_collect
         self.stop_criterion = stop_criterion
         self.train_callbacks = train_callbacks or []
         self.test_callbacks = test_callbacks or []
@@ -177,9 +173,6 @@ class Agent:
 
         if self.step_per_collect is None:
             self.step_per_collect = len(self.train_envs)
-
-        if self.update_per_step is None:
-            self.update_per_step = 1 / self.step_per_collect
 
         # spaces
         self.observation_space = self.train_envs.observation_space[0]
@@ -428,7 +421,7 @@ class OffPolicyAgent(Agent):
             * ``step_per_epoch``;
             * ``step_per_collect``;
             * ``episode_per_test``;
-            * ``update_per_step``;
+            * ``update_per_collect``;
             * ``logger``.
 
         Returns:
@@ -448,7 +441,7 @@ class OffPolicyAgent(Agent):
             step_per_collect=self.step_per_collect,
             episode_per_test=self.episode_per_test,
             batch_size=self.batch_size,
-            update_per_step=self.update_per_step,
+            update_per_collect=self.update_per_collect,
             stop_fn=self._stop_fn,
             train_fn=self._train_fn,
             test_fn=self._test_fn,
@@ -457,6 +450,9 @@ class OffPolicyAgent(Agent):
         )
 
         params.update(kwargs)
+        update_per_collect = params.pop("update_per_collect")
+        params["update_per_step"] = update_per_collect / params["step_per_collect"]
+
         return offpolicy_trainer(**params)
 
 class AgentPreset:
