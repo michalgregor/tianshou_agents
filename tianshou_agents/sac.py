@@ -155,13 +155,19 @@ class SACAgent(OffPolicyAgent):
             )
             alpha = (target_entropy, log_alpha, alpha_optim)
 
+        # exploration noise
+        if not noise_std is None and not noise_std == 0:
+            exploration_noise = OUNoise(0.0, noise_std)
+        else:
+            exploration_noise = None
+
         self.policy = SACPolicy(
             self.actor, self.actor_optim,
             self.critic1, self.critic1_optim,
             self.critic2, self.critic2_optim,
             tau=tau, gamma=gamma, alpha=alpha,
             reward_normalization=reward_normalization,
-            exploration_noise=OUNoise(0.0, noise_std),
+            exploration_noise=exploration_noise,
             action_space=self.action_space,
             estimation_step=estimation_step,
             deterministic_eval=deterministic_eval
