@@ -1,5 +1,5 @@
 from tianshou.data import ReplayBuffer, VectorReplayBuffer, Collector
-from tianshou.env import BaseVectorEnv, DummyVectorEnv
+from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
 from tianshou.trainer import offpolicy_trainer
 from tianshou.utils import BasicLogger
 from .network import RLNetwork
@@ -27,8 +27,8 @@ class Agent:
         update_per_step: Optional[float] = None,
         exploration_noise_train: bool = True,
         exploration_noise_test: bool = True,
-        train_env_class: Type[BaseVectorEnv] = DummyVectorEnv,
-        test_env_class: Type[BaseVectorEnv] = DummyVectorEnv,
+        train_env_class: Optional[Type[BaseVectorEnv]] = None,
+        test_env_class: Optional[Type[BaseVectorEnv]] = None,
         episode_per_test: Optional[int] = None,
         train_callbacks: Optional[List[Callable[[int, int], None]]] = None,
         test_callbacks: Optional[List[Callable[[int, int], None]]] = None,
@@ -257,6 +257,9 @@ class Agent:
             test_task = task
 
         if isinstance(train_envs, int):
+            if train_env_class is None:
+                train_env_class = DummyVectorEnv if len(train_envs) == 1 else SubprocVectorEnv
+
             self.train_envs = train_env_class(
                 [task for _ in range(train_envs)]
             )
@@ -266,6 +269,9 @@ class Agent:
             raise TypeError(f"train_envs: a BaseVectorEnv or an integer expected, got '{train_envs}'.")
 
         if isinstance(test_envs, int):
+            if test_env_class is None:
+                test_env_class = DummyVectorEnv if len(test_envs) == 1 else SubprocVectorEnv
+
             self.test_envs = test_env_class(
                 [test_task for _ in range(test_envs)]
             )
