@@ -1,5 +1,5 @@
 from .agent import AgentPreset, OffPolicyAgent
-from .network import RLNetwork
+from .network import MLP
 from tianshou.policy import SACPolicy
 from tianshou.env import DummyVectorEnv
 from tianshou.exploration import OUNoise
@@ -37,6 +37,52 @@ class SACAgent(OffPolicyAgent):
         alpha_optim_params: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
+        """[summary]
+
+        Args:
+            task_name (str): [description]
+            actor (Optional[torch.nn.Module], optional): [description]. Defaults to None.
+            actor_params (Optional[dict], optional): [description]. Defaults to None.
+            critic1 (Optional[torch.nn.Module], optional): [description]. Defaults to None.
+            critic1_params (Optional[dict], optional): [description]. Defaults to None.
+            critic2 (Optional[torch.nn.Module], optional): [description]. Defaults to None.
+            critic2_params (Optional[dict], optional): [description]. Defaults to None.
+            gamma (float, optional): [description]. Defaults to 0.99.
+            tau (float, optional): [description]. Defaults to 0.005.
+            auto_alpha (bool, optional): [description]. Defaults to True.
+            alpha (float, optional): [description]. Defaults to 0.2.
+            noise_std (float, optional): [description]. Defaults to 1.2.
+            reward_normalization (bool, optional): [description]. Defaults to False.
+            estimation_step (int, optional): [description]. Defaults to 1.
+            deterministic_eval (bool, optional): [description]. Defaults to True.
+            actor_optim (Optional[Union[Optimizer, Callable[..., Optimizer]]], optional): [description]. Defaults to None.
+            actor_optim_params (Optional[Dict[str, Any]], optional): [description]. Defaults to None.
+            critic1_optim (Optional[Union[Optimizer, Callable[..., Optimizer]]], optional): [description]. Defaults to None.
+            critic1_optim_params (Optional[Dict[str, Any]], optional): [description]. Defaults to None.
+            critic2_optim (Optional[Union[Optimizer, Callable[..., Optimizer]]], optional): [description]. Defaults to None.
+            critic2_optim_params (Optional[Dict[str, Any]], optional): [description]. Defaults to None.
+            alpha_optim (Optional[Union[Optimizer, Callable[..., Optimizer]]], optional): [description]. Defaults to None.
+            alpha_optim_params (Optional[Dict[str, Any]], optional): [description]. Defaults to None.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        For additional arguments that need to (or can optionally) be supplied
+        as keyword arguments, see ``tianshou_agents.Agent`` and
+        ``tianshou_agents.OffPolicyAgent``, or better still use and modify
+        one of the provided presets.
+        """
         policy_kwargs = locals().copy()
         del policy_kwargs['self']
         del policy_kwargs['__class__']
@@ -121,6 +167,60 @@ class SACAgent(OffPolicyAgent):
             deterministic_eval=deterministic_eval
         )
 
+# the simple preset
+
+sac_simple_hyperparameters = {
+    # sac
+    'noise_std': 1.2,
+    'gamma': 0.99,
+    'tau': 0.005,
+    'auto_alpha': True,
+    'alpha': 0.2,
+    'reward_normalization': False,
+    'estimation_step': 1,
+    'deterministic_eval': True,
+    'actor': None,
+    'actor_params': dict(model=MLP, hidden_sizes=[128, 128]),
+    'actor_optim': None,
+    'actor_optim_params': dict(lr=3e-4),
+    'critic1': None,
+    'critic1_params': dict(model=MLP, hidden_sizes=[128, 128]),
+    'critic1_optim': None,
+    'critic1_optim_params': dict(lr=3e-4),
+    'critic2': None,
+    'critic2_params': dict(model=MLP, hidden_sizes=[128, 128]),
+    'critic2_optim': None,
+    'critic2_optim_params': dict(lr=3e-4),
+    'alpha_optim': None,
+    'alpha_optim_params': dict(lr=3e-4),
+    # replay buffer
+    'replay_buffer': 1000000,
+    'prefill_steps': None,
+    # general
+    'train_envs': 16,
+    'test_envs': 10,
+    'train_env_class': DummyVectorEnv,
+    'test_env_class': DummyVectorEnv,
+    'episode_per_test': None,
+    'seed': None,
+    'max_epoch': 10,
+    'step_per_epoch': 80000,
+    'step_per_collect': None,
+    'update_per_step': None,
+    'batch_size': 256,
+    'logdir': 'log',
+    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+    'train_callbacks': None,
+    'test_callbacks': None,
+    'train_collector': None,
+    'test_collector': None,
+    'exploration_noise_train': True,
+    'exploration_noise_test': True,
+    'task': None
+}
+
+sac_simple = AgentPreset(SACAgent, sac_simple_hyperparameters)
+
 # the classic preset
 
 sac_classic_hyperparameters = {
@@ -134,15 +234,15 @@ sac_classic_hyperparameters = {
     'estimation_step': 1,
     'deterministic_eval': True,
     'actor': None,
-    'actor_params': dict(hidden_sizes=[128, 128]),
+    'actor_params': dict(model=MLP, hidden_sizes=[128, 128]),
     'actor_optim': None,
     'actor_optim_params': dict(lr=3e-4),
     'critic1': None,
-    'critic1_params': dict(hidden_sizes=[128, 128]),
+    'critic1_params': dict(model=MLP, hidden_sizes=[128, 128]),
     'critic1_optim': None,
     'critic1_optim_params': dict(lr=3e-4),
     'critic2': None,
-    'critic2_params': dict(hidden_sizes=[128, 128]),
+    'critic2_params': dict(model=MLP, hidden_sizes=[128, 128]),
     'critic2_optim': None,
     'critic2_optim_params': dict(lr=3e-4),
     'alpha_optim': None,
@@ -188,15 +288,15 @@ sac_pybullet_hyperparameters = {
     'estimation_step': 1,
     'deterministic_eval': True,
     'actor': None,
-    'actor_params': dict(hidden_sizes=[256, 256]),
+    'actor_params': dict(model=MLP, hidden_sizes=[256, 256]),
     'actor_optim': None,
     'actor_optim_params': dict(lr=1e-3),
     'critic1': None,
-    'critic1_params': dict(hidden_sizes=[256, 256]),
+    'critic1_params': dict(model=MLP, hidden_sizes=[256, 256]),
     'critic1_optim': None,
     'critic1_optim_params': dict(lr=1e-3),
     'critic2': None,
-    'critic2_params': dict(hidden_sizes=[256, 256]),
+    'critic2_params': dict(model=MLP, hidden_sizes=[256, 256]),
     'critic2_optim': None,
     'critic2_optim_params': dict(lr=1e-3),
     'alpha_optim': None,

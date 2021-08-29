@@ -210,7 +210,7 @@ dqn_simple_hyperparameters = {
     'step_per_epoch': 80000,
     'step_per_collect': None,
     'update_per_step': None,
-    'batch_size': 128,
+    'batch_size': 256,
     'logdir': 'log',
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'train_callbacks': None,
