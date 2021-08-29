@@ -5,6 +5,7 @@ from .network import RLNetwork
 from .utils import AgentLogger
 from torch.optim import Optimizer
 
+from functools import partial
 from torch.utils.tensorboard import SummaryWriter
 from typing import List, Optional, Union, Callable, Type, Dict, Any
 from gym.spaces import Tuple as GymTuple
@@ -245,7 +246,7 @@ class Agent:
         test_env_class, test_envs
     ):
         if task is None:
-            task = lambda: gym.make(task_name)
+            task = partial(gym.make, task_name)
 
         if test_task is None:
             test_task = task
