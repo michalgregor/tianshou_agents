@@ -1,8 +1,8 @@
 from tianshou.data import ReplayBuffer, VectorReplayBuffer, Collector
 from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
 from tianshou.trainer import offpolicy_trainer
-from tianshou.utils import BasicLogger
 from .network import RLNetwork
+from .utils import AgentLogger
 from torch.optim import Optimizer
 
 from torch.utils.tensorboard import SummaryWriter
@@ -36,6 +36,7 @@ class Agent:
         test_collector: Optional[Union[Collector, Callable[..., Collector]]] = None,
         seed: int = None,
         logdir: str = "log",
+        logger_params: dict = None,
         device: Union[str, int, torch.device] = "cpu",
         task: Optional[Callable[[], gym.Env]] = None,
         test_task: Optional[Callable[[], gym.Env]] = None,
@@ -128,6 +129,7 @@ class Agent:
                 ``train_envs.seed``, ``test_envs.seed``). Defaults to ``None``
                 in which case no seeding is done.
             logdir (str, optional): The path to the directory where logs will be kept.
+            logger_params (dict, optional): Parameters to ``tianshou_agents.utils.AgentLogger``.
             device (Union[str, int, torch.device], optional): The PyTorch device
                 to be used by PyTorch tensors and networks.
             task (Callable[[], gym.Env], optional): A callable used to
@@ -150,8 +152,6 @@ class Agent:
             Any additional keyword arguments are passed to the policy
             construction method (``_setup_policy(self, **kwargs)``).
         """
-
-        self._inialized = False
         self._seed = seed
         self._device = device
         self.max_epoch = max_epoch
@@ -161,8 +161,9 @@ class Agent:
         self.stop_criterion = stop_criterion
         self.train_callbacks = train_callbacks or []
         self.test_callbacks = test_callbacks or []
-        self.epoch = 0
-        self.env_step = 0
+        self.epoch = None
+        self.env_step = None
+        self.gradient_step = None
 
         # envs
         self._setup_envs(
@@ -196,7 +197,7 @@ class Agent:
         self._setup_replay_buffer(replay_buffer)
         self._setup_collectors(train_collector, test_collector,
             exploration_noise_train, exploration_noise_test)
-        self._setup_logger(logdir, task_name, method_name)
+        self._setup_logger(logger_params, logdir, task_name, method_name)
 
     @abc.abstractmethod
     def _setup_policy(self, **kwargs):
@@ -273,10 +274,11 @@ class Agent:
         else:
             raise TypeError(f"test_envs: a BaseVectorEnv or an integer expected, got '{test_envs}'.")
 
-    def _setup_logger(self, logdir, task_name, method_name):
+    def _setup_logger(self, logger_params, logdir, task_name, method_name):
+        if logger_params is None: logger_params = {}
         self.log_path = os.path.join(logdir, task_name, method_name)
         writer = SummaryWriter(self.log_path)
-        self.logger = BasicLogger(writer)
+        self.logger = AgentLogger(self, writer, **logger_params)
 
     def _setup_replay_buffer(self, replay_buffer):
         if isinstance(replay_buffer, Number):
@@ -344,7 +346,6 @@ class Agent:
             self.test_envs.seed(self._seed)
 
     def _init(self):
-        self._inialized = True
         self._apply_seed()
 
     def construct_rlnet(
@@ -440,7 +441,7 @@ class OffPolicyAgent(Agent):
             dict: See :func:`~tianshou.trainer.gather_info`.
         """        
 
-        if not self._inialized:
+        if self.env_step is None: # if no training has been done yet
             self._init()
 
         self.policy.train()
@@ -458,7 +459,8 @@ class OffPolicyAgent(Agent):
             train_fn=self._train_fn,
             test_fn=self._test_fn,
             save_fn=self._save_fn,
-            logger=self.logger
+            logger=self.logger,
+            resume_from_log=True
         )
 
         params.update(kwargs)
