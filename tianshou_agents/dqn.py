@@ -150,7 +150,7 @@ dqn_classic_hyperparameters = {
     'optim': None,
     'optim_params': dict(lr=0.013),
     # replay buffer
-    'replay_buffer': 100000,
+    'replay_buffer': 1000000,
     'eps_prefill': 1.0,
     'prefill_steps': None,
     # general

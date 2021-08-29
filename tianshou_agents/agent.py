@@ -21,7 +21,7 @@ class Agent:
         max_epoch: int = 10,
         train_envs: Union[int, BaseVectorEnv] = 1,
         test_envs: Union[int, BaseVectorEnv] = 1,
-        replay_buffer: Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]] = 100000,
+        replay_buffer: Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]] = 1000000,
         step_per_epoch: int = 10000,
         step_per_collect: Optional[int] = None,
         update_per_step: Optional[float] = None,

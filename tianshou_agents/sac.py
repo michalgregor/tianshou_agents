@@ -146,7 +146,7 @@ sac_classic_hyperparameters = {
     'alpha_optim': None,
     'alpha_optim_params': dict(lr=3e-4),
     # replay buffer
-    'replay_buffer': 100000,
+    'replay_buffer': 1000000,
     'prefill_steps': None,
     # general
     'train_envs': 16,
