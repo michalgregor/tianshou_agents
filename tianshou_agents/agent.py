@@ -348,16 +348,27 @@ class Agent:
         self._apply_seed()
 
     def construct_rlnet(
-        self, module, module_params, state_shape, action_shape, **kwargs
+        self, module, state_shape, action_shape, **kwargs
     ):
-        if not module_params is None:
-            kwargs = kwargs.copy()
-            kwargs.update(module_params)
-        
-        if isinstance(module, torch.nn.Module):
+        if module is None:
+            module = RLNetwork(
+                state_shape, action_shape,
+                device=self._device,
+                **kwargs
+            ).to(self._device)
+        elif isinstance(module, torch.nn.Module):
             module = module.to(self._device)
+        elif isinstance(module, dict):
+            kwargs = kwargs.copy()
+            kwargs.update(module)
+            module = kwargs.pop("type", RLNetwork)
+            module = module(
+                state_shape, action_shape,
+                device=self._device,
+                **kwargs
+            ).to(self._device)
+
         else:
-            if module is None: module = RLNetwork
             module = module(
                 state_shape, action_shape,
                 device=self._device,
@@ -366,16 +377,17 @@ class Agent:
 
         return module
 
-    def construct_optim(self, optim, optim_params, model_params):
-        if optim_params is None: optim_params = {}
-        if isinstance(optim, Optimizer):
+    def construct_optim(self, optim, model_params):
+        if optim is None:
+            optim = torch.optim.Adam(model_params)
+        elif isinstance(optim, Optimizer):
             pass
+        elif isinstance(optim, dict):
+            kwargs = optim.copy()
+            optim = kwargs.pop("type", torch.optim.Adam)
+            optim = optim(model_params, **kwargs)
         else:
-            if optim is None: optim = torch.optim.Adam
-            optim = optim(
-                model_params,
-                **optim_params
-            )
+            optim = optim(model_params)
 
         return optim
 

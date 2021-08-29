@@ -21,10 +21,8 @@ class DQNAgent(OffPolicyAgent):
         gamma: float = 0.99,
         target_update_freq: int = 0,
         estimation_step: int = 1,
-        qnetwork: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module]]] = None,
-        qnetwork_params: Optional[Dict[str, Any]] = None,
-        optim: Optional[Union[Optimizer, Callable[..., Optimizer]]] = None,
-        optim_params: Optional[Dict[str, Any]] = None,
+        qnetwork: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]]] = None,
+        optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = None,
         **kwargs: Any
     ):
         """Implementation of Deep Q Network. arXiv:1312.5602.
@@ -51,22 +49,26 @@ class DQNAgent(OffPolicyAgent):
             target_update_freq (int): The target network update frequency
                 (0 if you do not use the target network).
             estimation_step (int): The number of steps to look ahead.
-            qnetwork ([Union[torch.nn.Module, Callable[..., torch.nn.Module]]]):
+            qnetwork (Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]], optional):
                 The torch Module to be used as the Q-Network. Can be either
-                a torch Module or ``callable(state_shape, action_shape, device, **qnetwork_params)``
-                that returns a torch Module. Defaults to None, which means an
-                RLNetwork is going to be constructed.
-            qnetwork_params (Dict[str, Any]): The parameters to be
-                passed to the Q-Network (if a new one is to be constructed).
-                Defaults to None, which means an empty dictionary.
-            optim (Union[Optimizer, Callable[..., Optimizer]]): The optimizer
-                to use for training the Q-Network. This can either be an
-                Optimizer instance or ``callable(parameters, **kwargs)``.
+                a torch ``Module`` or ``callable(state_shape, action_shape, device)``
+                that returns a torch ``Module``. If None, a default RLNetwork
+                is constructed.
+                
+                Alternatively, this can be a dictionary, where the ``type`` key
+                (RLNetwork by default) is a
+                ``callable(state_shape, action_shape, device, **qnetwork_params)``
+                and the remaining keys are ``**qnetwork_params``.
+
+            optim (Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]], optional):
+                The optimizer to use for training the Q-Network. This can either be an
+                Optimizer instance or ``callable(parameters)``.
                 Defaults to None, which means the Adam optimizer is going
                 to be constructed.
-            optim_params (Dict[str, Any]): The parameters to be
-                passed to the optimizer (if a new one is to be constructed).
-                Defaults to None, which means an empty dictionary.
+
+                Alternatively, this can be a dictionary, where the ``type`` key
+                (Adam) is a ``callable(parameters, **kwargs)`` and the 
+                remaining keys are ``**kwargs``.
 
         For additional arguments that need to (or can optionally) be supplied
         as keyword arguments, see ``tianshou_agents.Agent`` and
@@ -86,16 +88,14 @@ class DQNAgent(OffPolicyAgent):
     def _setup_policy(self, 
         is_double, eps_test, eps_train,
         gamma, target_update_freq,
-        estimation_step, reward_normalization, qnetwork, qnetwork_params,
-        optim, optim_params
+        estimation_step, reward_normalization, qnetwork, optim
     ):
         self.qnetwork = self.construct_rlnet(
-            qnetwork, qnetwork_params,
-            self.state_shape, self.action_shape
+            qnetwork, self.state_shape, self.action_shape
         )
 
         self.optim = self.construct_optim(
-            optim, optim_params, self.qnetwork.parameters()
+            optim, self.qnetwork.parameters()
         )
 
         # the algo
@@ -137,8 +137,7 @@ dqn_classic_hyperparameters = {
     'target_update_freq': 500,
     'estimation_step': 4,
     'reward_normalization': False,
-    'qnetwork': None,
-    'qnetwork_params': dict(
+    'qnetwork': dict(
         model=MLP,
         hidden_sizes=[128, 128],
         dueling_param=(
@@ -146,8 +145,7 @@ dqn_classic_hyperparameters = {
             {"hidden_sizes": [128, 128]} # V_param
         )
     ),
-    'optim': None,
-    'optim_params': dict(lr=0.013),
+    'optim': dict(lr=0.013),
     # replay buffer
     'replay_buffer': 1000000,
     'prefill_steps': None,
@@ -189,13 +187,11 @@ dqn_simple_hyperparameters = {
     'target_update_freq': 500,
     'estimation_step': 1,
     'reward_normalization': False,
-    'qnetwork': None,
-    'qnetwork_params': dict(
+    'qnetwork': dict(
         model=MLP,
         hidden_sizes=[128, 128]
     ),
-    'optim': None,
-    'optim_params': dict(lr=0.013),
+    'optim': dict(lr=0.013),
     # replay buffer
     'replay_buffer': 1000000,
     'prefill_steps': None,
