@@ -473,6 +473,7 @@ class AgentPreset:
         """
         self.default_params = default_params
         self.agent_class = agent_class
+        self._preproc_func = None
 
     def __call__(self, *args, **kwargs):
         """Creates an instance of the agent, intialized using the default
@@ -481,4 +482,8 @@ class AgentPreset:
         """
         params = self.default_params.copy()
         params.update(kwargs)
-        return self.agent_class(*args, **params)
+
+        if self._preproc_func is None:
+            return self.agent_class(*args, **params)
+        else:
+            return self._preproc_func(self.agent_class(*args, **params))
