@@ -328,10 +328,10 @@ class Agent:
     def _stop_fn(self, mean_rewards):
         if callable(self.stop_criterion):
             return self.stop_criterion(mean_rewards, self.reward_threshold, self)
-        elif self.stop_criterion:
+        elif self.stop_criterion and not self.reward_threshold is None:
             return mean_rewards >= self.reward_threshold
         else:
-            return True
+            return False
 
     def _train_fn(self, epoch, env_step):
         self.epoch = epoch
