@@ -17,7 +17,6 @@ class DQNAgent(OffPolicyAgent):
             lambda max_epoch, step_per_epoch: ExponentialSchedule(
                 max_epoch*step_per_epoch*0.5, 0.73, 0.1
             ),
-        eps_prefill: float = 1.0,
         gamma: float = 0.99,
         target_update_freq: int = 0,
         estimation_step: int = 1,
@@ -81,18 +80,12 @@ class DQNAgent(OffPolicyAgent):
         super().__init__(task_name=task_name, method_name='dqn',
                          **kwargs, **policy_kwargs)
 
-    def _init(self):
-        self.policy.set_eps(self.eps_prefill)
-        super()._init()
-
     def _setup_policy(self, 
-        is_double, eps_test, eps_train, eps_prefill,
+        is_double, eps_test, eps_train,
         gamma, target_update_freq,
         estimation_step, reward_normalization, qnetwork, qnetwork_params,
         optim, optim_params
     ):
-        self.eps_prefill = eps_prefill
-
         self.qnetwork = self.construct_rlnet(
             qnetwork, qnetwork_params,
             self.state_shape, self.action_shape
@@ -151,7 +144,6 @@ dqn_classic_hyperparameters = {
     'optim_params': dict(lr=0.013),
     # replay buffer
     'replay_buffer': 1000000,
-    'eps_prefill': 1.0,
     'prefill_steps': None,
     # general
     'train_envs': 16,

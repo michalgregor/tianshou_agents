@@ -417,7 +417,7 @@ class OffPolicyAgent(Agent):
         super()._init()
         # prefill the replay buffer
         if self.prefill_steps:
-            self.train_collector.collect(n_step=self.prefill_steps)
+            self.train_collector.collect(n_step=self.prefill_steps, random=True)
 
     def train(self, **kwargs) -> Dict[str, Union[float, str]]:
         """Runs off-policy training. The keyword arguments (if any) are used
