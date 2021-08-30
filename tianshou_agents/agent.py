@@ -41,7 +41,7 @@ class Agent:
         device: Union[str, int, torch.device] = "cpu",
         task: Optional[Callable[[], gym.Env]] = None,
         test_task: Optional[Callable[[], gym.Env]] = None,
-        stop_criterion: Union[bool, Callable[[float, Union[float, None], 'Agent'], bool]] = True,
+        stop_criterion: Union[bool, Callable[[float, Union[float, None], 'Agent'], float]] = True,
         **policy_kwargs
     ):
         """The base class of Agents, which provides the common functionality
@@ -140,12 +140,14 @@ class Agent:
                 construct testing environments. Defaults to None in which
                 case testing environments are constructed in the same way
                 as training environments.
-            stop_criterion (Union[bool, Callable[[float, Union[float, None], 'Agent'], bool]]):
+            stop_criterion (Union[bool, Callable[[float, Union[float, None], 'Agent'], float]]):
                 The criterion used to stop training before ``max_epoch`` has
                 been reached:
                     * If set to ``True``, training stops once the
                       mean reward reaches the environment's reward threshold;
                     * If set to ``False``, the stop criterion is disabled;
+                    * If a float, training stops once the mean reward reaches
+                      ``stop_criterion``.
                     * If set to ``callable(mean_rewards, reward_threshold, agent)``,
                       the callable is used to determine whether training should
                       be stopped or not.
@@ -329,6 +331,8 @@ class Agent:
     def _stop_fn(self, mean_rewards):
         if callable(self.stop_criterion):
             return self.stop_criterion(mean_rewards, self.reward_threshold, self)
+        elif isinstance(self.stop_criterion, Number) and not isinstance(self.stop_criterion, bool):
+            return mean_rewards >= self.stop_criterion
         elif self.stop_criterion and not self.reward_threshold is None:
             return mean_rewards >= self.reward_threshold
         else:
