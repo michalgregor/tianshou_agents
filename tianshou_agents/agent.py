@@ -153,7 +153,6 @@ class Agent:
             Any additional keyword arguments are passed to the policy
             construction method (``_setup_policy(self, **kwargs)``).
         """
-        self._seed = seed
         self._device = device
         self.max_epoch = max_epoch
         self.step_per_epoch = step_per_epoch
@@ -172,6 +171,9 @@ class Agent:
             train_env_class, train_envs,
             test_env_class, test_envs
         )
+
+        # seed
+        self._apply_seed(seed)
 
         if self.step_per_collect is None:
             self.step_per_collect = len(self.train_envs)
@@ -245,6 +247,9 @@ class Agent:
         train_env_class, train_envs,
         test_env_class, test_envs
     ):
+        """
+        This method is called before seeding so it needs to be deterministic.
+        """
         if task is None:
             task = partial(gym.make, task_name)
 
@@ -339,15 +344,12 @@ class Agent:
         for callback in self.test_callbacks:
             callback(epoch, env_step)
 
-    def _apply_seed(self):
-        if not self._seed is None:
-            np.random.seed(self._seed)
-            torch.manual_seed(self._seed)
-            self.train_envs.seed(self._seed)
-            self.test_envs.seed(self._seed)
-
-    def _init(self):
-        self._apply_seed()
+    def _apply_seed(self, seed):
+        if not seed is None:
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            self.train_envs.seed(seed)
+            self.test_envs.seed(seed)
 
     def construct_rlnet(
         self, module, state_shape, action_shape, **kwargs
@@ -421,12 +423,11 @@ class OffPolicyAgent(Agent):
             self.prefill_steps = prefill_steps
 
     def _init(self):
-        super()._init()
         # prefill the replay buffer
         if self.prefill_steps:
             self.train_collector.collect(n_step=self.prefill_steps, random=True)
 
-    def train(self, **kwargs) -> Dict[str, Union[float, str]]:
+    def train(self, seed=None, **kwargs) -> Dict[str, Union[float, str]]:
         """Runs off-policy training. The keyword arguments (if any) are used
         to update the arguments passed to ``offpolicy_trainer``. Most notably,
         perhaps, you can override the:
@@ -440,10 +441,10 @@ class OffPolicyAgent(Agent):
 
         Returns:
             dict: See :func:`~tianshou.trainer.gather_info`.
-        """        
-
-        if self.env_step is None: # if no training has been done yet
-            self._init()
+        """
+        self._apply_seed(seed)
+        # if no training has been done yet
+        if self.env_step is None: self._init()
 
         self.policy.train()
         params = dict(
