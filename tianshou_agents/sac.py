@@ -243,7 +243,7 @@ sac_simple_hyperparameters = {
     'prefill_steps': None,
     # general
     'train_envs': 1,
-    'test_envs': 1,
+    'test_envs': 100,
     'train_env_class': DummyVectorEnv,
     'test_env_class': DummyVectorEnv,
     'episode_per_test': None,
