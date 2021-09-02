@@ -45,15 +45,16 @@ class VectorEnvRenderWrapper(gym.Wrapper):
 
 class AgentLogger(BasicLogger):
     def __init__(self,
-        agent: 'Agent',
-        writer: Optional[SummaryWriter] = None,
+        agent: 'Agent', log_path=None,
         train_interval: int = 1000,
         test_interval: int = 1,
         update_interval: int = 1000,
         save_interval: int = 1,
     ):
         self.agent = agent
-        
+        self.log_path = log_path
+        writer = self._make_writer()
+
         super().__init__(
             writer=writer,
             train_interval=train_interval,
@@ -61,6 +62,23 @@ class AgentLogger(BasicLogger):
             update_interval=update_interval,
             save_interval=save_interval
         )
+
+    def _make_writer(self):
+        if self.log_path is None:
+            writer = None
+        else:
+            writer = SummaryWriter(self.log_path)
+
+        return writer
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['writer']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.writer = self._make_writer()
 
     def write(self, key: str, x: int, y: WRITE_TYPE, **kwargs: Any) -> None:
         if not self.writer is None:

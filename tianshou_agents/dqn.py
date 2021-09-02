@@ -170,7 +170,7 @@ dqn_classic_hyperparameters = {
     'exploration_noise_train': True,
     'exploration_noise_test': True,
     'task': None,
-    'stop_criterion': True
+    'stop_criterion': False
 }
 
 dqn_classic = AgentPreset(DQNAgent, dqn_classic_hyperparameters)
@@ -216,7 +216,7 @@ dqn_simple_hyperparameters = {
     'exploration_noise_train': True,
     'exploration_noise_test': True,
     'task': None,
-    'stop_criterion': True
+    'stop_criterion': False
 }
 
 dqn_simple = AgentPreset(DQNAgent, dqn_simple_hyperparameters)

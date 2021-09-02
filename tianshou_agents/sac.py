@@ -261,7 +261,8 @@ sac_simple_hyperparameters = {
     'test_collector': None,
     'exploration_noise_train': True,
     'exploration_noise_test': True,
-    'task': None
+    'task': None,
+    'stop_criterion': False
 }
 
 sac_simple = AgentPreset(SACAgent, sac_simple_hyperparameters)
@@ -308,7 +309,8 @@ sac_classic_hyperparameters = {
     'test_collector': None,
     'exploration_noise_train': True,
     'exploration_noise_test': True,
-    'task': None
+    'task': None,
+    'stop_criterion': False
 }
 
 sac_classic = AgentPreset(SACAgent, sac_classic_hyperparameters)
@@ -355,7 +357,8 @@ sac_pybullet_hyperparameters = {
     'test_collector': None,
     'exploration_noise_train': True,
     'exploration_noise_test': True,
-    'task': None
+    'task': None,
+    'stop_criterion': False
 }
 
 sac_pybullet = AgentPreset(SACAgent, sac_pybullet_hyperparameters)

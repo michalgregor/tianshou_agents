@@ -41,7 +41,7 @@ class Agent:
         device: Union[str, int, torch.device] = "cpu",
         task: Optional[Callable[[], gym.Env]] = None,
         test_task: Optional[Callable[[], gym.Env]] = None,
-        stop_criterion: Union[bool, Callable[[float, Union[float, None], 'Agent'], float]] = True,
+        stop_criterion: Union[bool, Callable[[float, Union[float, None], 'Agent'], float]] = False,
         **policy_kwargs
     ):
         """The base class of Agents, which provides the common functionality
@@ -144,13 +144,15 @@ class Agent:
                 The criterion used to stop training before ``max_epoch`` has
                 been reached:
                     * If set to ``True``, training stops once the
-                      mean reward reaches the environment's reward threshold;
+                      mean test reward from the previous collect reaches the
+                      environment's reward threshold;
                     * If set to ``False``, the stop criterion is disabled;
-                    * If a float, training stops once the mean reward reaches
-                      ``stop_criterion``.
+                    * If a float, training stops once the mean test reward
+                      from the previous collect reaches ``stop_criterion``.
                     * If set to ``callable(mean_rewards, reward_threshold, agent)``,
                       the callable is used to determine whether training should
-                      be stopped or not.
+                      be stopped or not; mean_rewards is the mean test reward
+                      from the previous collect.
 
             Any additional keyword arguments are passed to the policy
             construction method (``_setup_policy(self, **kwargs)``).
@@ -285,8 +287,7 @@ class Agent:
     def _setup_logger(self, logger_params, logdir, task_name, method_name):
         if logger_params is None: logger_params = {}
         self.log_path = os.path.join(logdir, task_name, method_name)
-        writer = SummaryWriter(self.log_path)
-        self.logger = AgentLogger(self, writer, **logger_params)
+        self.logger = AgentLogger(self, self.log_path, **logger_params)
 
     def _setup_replay_buffer(self, replay_buffer):
         if isinstance(replay_buffer, Number):
@@ -446,11 +447,6 @@ class OffPolicyAgent(Agent):
         Returns:
             dict: See :func:`~tianshou.trainer.gather_info`.
         """
-        self._apply_seed(seed)
-        # if no training has been done yet
-        if self.env_step is None: self._init()
-
-        self.policy.train()
         params = dict(
             policy=self.policy,
             train_collector=self.train_collector,
@@ -468,11 +464,19 @@ class OffPolicyAgent(Agent):
             logger=self.logger,
             resume_from_log=True
         )
-
         params.update(kwargs)
         update_per_collect = params.pop("update_per_collect")
         params["update_per_step"] = update_per_collect / params["step_per_collect"]
 
+        # check whether training should actually start
+        if self.epoch and self.epoch >= params["max_epoch"]: return
+
+        # apply the seed
+        self._apply_seed(seed)
+        # if no training has been done yet
+        if self.env_step is None: self._init()
+
+        self.policy.train()
         return offpolicy_trainer(**params)
 
 class AgentPreset:
