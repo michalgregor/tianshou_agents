@@ -16,12 +16,62 @@ import gym
 import abc
 import os
 
+def setup_envs(
+    task_name, task, test_task,
+    train_env_class, train_envs,
+    test_env_class, test_envs
+):
+    """
+    This method is called before seeding so it needs to be deterministic.
+    """
+    if task is None:
+        task = partial(gym.make, task_name)
+
+    if test_task is None:
+        test_task = task
+
+    if isinstance(train_envs, int):
+        if train_env_class is None:
+            train_env_class = DummyVectorEnv if train_envs == 1 else SubprocVectorEnv
+
+        train_envs = train_env_class(
+            [task for _ in range(train_envs)]
+        )
+    elif isinstance(train_envs, list):
+        if train_env_class is None:
+            train_env_class = DummyVectorEnv if len(train_envs) == 1 else SubprocVectorEnv
+
+        train_envs = train_env_class(train_envs)
+    elif isinstance(train_envs, BaseVectorEnv):
+        pass
+    else:
+        raise TypeError(f"train_envs: a BaseVectorEnv or an integer expected, got '{train_envs}'.")
+
+    if isinstance(test_envs, int):
+        if test_env_class is None:
+            test_env_class = DummyVectorEnv if test_envs == 1 else SubprocVectorEnv
+
+        test_envs = test_env_class(
+            [test_task for _ in range(test_envs)]
+        )
+    elif isinstance(test_envs, list):
+        if test_env_class is None:
+            test_env_class = DummyVectorEnv if len(test_envs) == 1 else SubprocVectorEnv
+
+        test_envs = test_env_class(test_envs)
+    elif isinstance(test_envs, BaseVectorEnv):
+        test_envs = test_envs
+    else:
+        raise TypeError(f"test_envs: a BaseVectorEnv or an integer expected, got '{test_envs}'.")
+
+    return train_envs, test_envs
+
 class Agent:
     def __init__(
         self, task_name: str, method_name: str,
         max_epoch: int = 10,
-        train_envs: Union[int, BaseVectorEnv] = 1,
-        test_envs: Union[int, BaseVectorEnv] = 1,
+        train_envs: Union[int, List[gym.Env], BaseVectorEnv] = 1,
+        test_envs: Union[int, List[gym.Env], BaseVectorEnv] = 1,
         replay_buffer: Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]] = 1000000,
         step_per_epoch: int = 10000,
         step_per_collect: Optional[int] = None,
@@ -66,12 +116,12 @@ class Agent:
                 training process might be finished before reaching ``max_epoch``
                 if the stop criterion returns ``True``; this behaviour can be
                 overriden using the ``stop_criterion`` argument.
-            train_envs (Union[int, BaseVectorEnv], optional): Either the
+            train_envs (Union[int, List[gym.Env], BaseVectorEnv], optional): Either the
                 collection of environment instances used to train the agent or
                 the number of environments to be used (the collection of
                 environments is constructed automatically using
                 ``train_env_class``).
-            test_envs (Union[int, BaseVectorEnv], optional): Either the
+            test_envs (Union[int, List[gym.Env], BaseVectorEnv], optional): Either the
                 collection of environment instances used to test the agent or
                 the number of environments to be used (the collection of
                 environments is constructed automatically using
@@ -254,35 +304,11 @@ class Agent:
         """
         This method is called before seeding so it needs to be deterministic.
         """
-        if task is None:
-            task = partial(gym.make, task_name)
-
-        if test_task is None:
-            test_task = task
-
-        if isinstance(train_envs, int):
-            if train_env_class is None:
-                train_env_class = DummyVectorEnv if train_envs == 1 else SubprocVectorEnv
-
-            self.train_envs = train_env_class(
-                [task for _ in range(train_envs)]
-            )
-        elif isinstance(train_envs, BaseVectorEnv):
-            self.train_envs = train_envs
-        else:
-            raise TypeError(f"train_envs: a BaseVectorEnv or an integer expected, got '{train_envs}'.")
-
-        if isinstance(test_envs, int):
-            if test_env_class is None:
-                test_env_class = DummyVectorEnv if test_envs == 1 else SubprocVectorEnv
-
-            self.test_envs = test_env_class(
-                [test_task for _ in range(test_envs)]
-            )
-        elif isinstance(test_envs, BaseVectorEnv):
-            self.test_envs = test_envs
-        else:
-            raise TypeError(f"test_envs: a BaseVectorEnv or an integer expected, got '{test_envs}'.")
+        self.train_envs, self.test_envs = setup_envs(
+            task_name, task, test_task,
+            train_env_class, train_envs,
+            test_env_class, test_envs
+        )
 
     def _setup_logger(self, logger_params, logdir, task_name, method_name):
         if logger_params is None: logger_params = {}
@@ -497,7 +523,6 @@ class AgentPreset:
         """
         self.default_params = default_params
         self.agent_class = agent_class
-        self._preproc_func = None
 
     def __call__(self, *args, **kwargs):
         """Creates an instance of the agent, intialized using the default
@@ -506,8 +531,4 @@ class AgentPreset:
         """
         params = self.default_params.copy()
         params.update(kwargs)
-
-        if self._preproc_func is None:
-            return self.agent_class(*args, **params)
-        else:
-            return self._preproc_func(self.agent_class(*args, **params))
+        return self.agent_class(*args, **params)
