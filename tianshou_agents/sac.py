@@ -340,8 +340,8 @@ sac_pybullet_hyperparameters = {
     # general
     'train_envs': 1,
     'test_envs': 10,
-    'train_env_class': None,
-    'test_env_class': None,
+    'train_env_class': DummyVectorEnv,
+    'test_env_class': DummyVectorEnv,
     'episode_per_test': None,
     'seed': None,
     'max_epoch': 200,
