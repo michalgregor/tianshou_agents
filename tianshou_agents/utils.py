@@ -1,9 +1,11 @@
 import gym
 import numpy as np
+from tianshou import env
 from tianshou.env import BaseVectorEnv
-from tianshou.utils.log_tools import BasicLogger, WRITE_TYPE
+from tianshou.utils.logger.base import LOG_DATA_TYPE, BaseLogger
+from tianshou.utils import TensorboardLogger
 from torch.utils.tensorboard import SummaryWriter
-from typing import Any, List, Optional, Union, Tuple
+from typing import Any, List, Optional, Union, Tuple, Callable
 
 class VectorEnvRenderWrapper(gym.Wrapper):
         def __init__(self, env: BaseVectorEnv):
@@ -43,50 +45,35 @@ class VectorEnvRenderWrapper(gym.Wrapper):
         def normalize_obs(self, obs: np.ndarray) -> np.ndarray:
             return self.env.normalize_obs(obs)
 
-class AgentLogger(BasicLogger):
-    def __init__(self,
-        agent: 'Agent', log_path=None,
-        train_interval: int = 1000,
-        test_interval: int = 1,
-        update_interval: int = 1000,
-        save_interval: int = 1,
-    ):
+class AgentLoggerWrapper(BaseLogger):
+    def __init__(self, agent: 'Agent', logger: BaseLogger):
         self.agent = agent
-        self.log_path = log_path
-        writer = self._make_writer()
+        self.logger = logger
 
-        super().__init__(
-            writer=writer,
-            train_interval=train_interval,
-            test_interval=test_interval,
-            update_interval=update_interval,
-            save_interval=save_interval
-        )
+    def __getattr__(self, name):
+        return getattr(self.preset, name)
 
-    def _make_writer(self):
-        if self.log_path is None:
-            writer = None
-        else:
-            writer = SummaryWriter(self.log_path)
+    def write(self, step_type: str, step: int, data: LOG_DATA_TYPE) -> None:
+        return self.logger.write(step_type, step, data)
 
-        return writer
+    def log_train_data(self, collect_result: dict, step: int) -> None:
+        return self.logger.log_train_data(collect_result, step)
 
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        del state['writer']
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        self.writer = self._make_writer()
-
-    def write(self, key: str, x: int, y: WRITE_TYPE, **kwargs: Any) -> None:
-        if not self.writer is None:
-            return super().write(key=key, x=x, y=y, **kwargs)
+    def log_test_data(self, collect_result: dict, step: int) -> None:
+        return self.logger.log_test_data(collect_result, step)
 
     def log_update_data(self, update_result: dict, step: int) -> None:
         self.agent.gradient_step = step
-        return super().log_update_data(update_result=update_result, step=step)
+        return self.logger.log_update_data(update_result, step)
+
+    def save_data(
+        self,
+        epoch: int,
+        env_step: int,
+        gradient_step: int,
+        save_checkpoint_fn: Optional[Callable[[int, int, int], None]] = None,
+    ) -> None:
+        return self.logger.save_data(epoch, env_step, gradient_step, save_checkpoint_fn)
 
     def restore_data(self) -> Tuple[int, int, int]:
         epoch, env_step, gradient_step = (self.agent.epoch,

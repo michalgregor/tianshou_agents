@@ -1,8 +1,9 @@
 from tianshou.data import ReplayBuffer, VectorReplayBuffer, Collector
 from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
+from tianshou.utils import BaseLogger, TensorboardLogger
 from tianshou.trainer import offpolicy_trainer
 from .network import RLNetwork
-from .utils import AgentLogger
+from .utils import AgentLoggerWrapper
 from torch.optim import Optimizer
 
 from functools import partial
@@ -86,8 +87,7 @@ class Agent:
         train_collector: Optional[Union[Collector, Callable[..., Collector]]] = None,
         test_collector: Optional[Union[Collector, Callable[..., Collector]]] = None,
         seed: int = None,
-        logdir: str = "log",
-        logger_params: dict = None,
+        logger: Optional[Union[str, Dict[str, Any], BaseLogger]] = "log",
         device: Union[str, int, torch.device] = "cpu",
         task: Optional[Callable[[], gym.Env]] = None,
         test_task: Optional[Callable[[], gym.Env]] = None,
@@ -179,8 +179,24 @@ class Agent:
                 number generators (``np.random``, ``torch.manual_seed``,
                 ``train_envs.seed``, ``test_envs.seed``). Defaults to ``None``
                 in which case no seeding is done.
-            logdir (str, optional): The path to the directory where logs will be kept.
-            logger_params (dict, optional): Parameters to ``tianshou_agents.utils.AgentLogger``.
+            logger (Union[str, Dict[str, Any], BaseLogger], optional):
+                The logger to use. If an instance of BaseLogger, the logger
+                is used for logging directly.
+
+                If a dictionary, it is interpreted as a set of keyword arguments
+                for constructing a logger. In that case, the constructor is to
+                be provided under key ``type``. If ``type`` is not present or
+                is None, then a TensorboardLogger is constructed. If a ``log_path``
+                key is provided, a tensorboard writer is set up with that path
+                automatically, unless already present in the keyword arguments.
+                If ``log_path`` is None and ``log_dir`` is provided, then the
+                path is constructed automatically by appending the name of the
+                environment and the name of the agent to it as subdirectories.
+                If ``log_dir`` is None as well, it defaults to ``log``.
+
+                If a string is provided, it is interpreted as ``log_dir``.
+
+                None is interpreted as ``log_dir = 'log'``.
             device (Union[str, int, torch.device], optional): The PyTorch device
                 to be used by PyTorch tensors and networks.
             task (Callable[[], gym.Env], optional): A callable used to
@@ -254,7 +270,7 @@ class Agent:
         self._setup_replay_buffer(replay_buffer)
         self._setup_collectors(train_collector, test_collector,
             exploration_noise_train, exploration_noise_test)
-        self._setup_logger(logger_params, logdir, task_name, method_name)
+        self._setup_logger(logger, task_name, method_name)
 
     @abc.abstractmethod
     def _setup_policy(self, **kwargs):
@@ -310,10 +326,40 @@ class Agent:
             test_env_class, test_envs
         )
 
-    def _setup_logger(self, logger_params, logdir, task_name, method_name):
-        if logger_params is None: logger_params = {}
-        self.log_path = os.path.join(logdir, task_name, method_name)
-        self.logger = AgentLogger(self, self.log_path, **logger_params)
+    def _setup_logger(self, logger, task_name, method_name):
+        self.log_path = None
+
+        if isinstance(logger, BaseLogger):
+            pass
+        elif logger is None:
+            self.log_path = os.path.join("log", task_name, method_name)
+            writer = SummaryWriter(self.log_path)
+            logger = TensorboardLogger(writer)
+        elif isinstance(logger, str):
+            self.log_path = os.path.join(logger, task_name, method_name)
+            writer = SummaryWriter(self.log_path)
+            logger = TensorboardLogger(writer)
+        else:
+            logger_params = logger.copy()
+            make_logger = logger_params.pop("type", TensorboardLogger)
+            log_path = logger_params.get("log_path")
+            log_dir = logger_params.get("log_dir", "log")
+            writer = logger_params.get("writer")
+
+            if make_logger == TensorboardLogger:
+                if writer is None:
+                    if not log_path is None:
+                        self.log_path = log_path
+                    else:
+                        self.log_path = os.path.join(log_dir, task_name, method_name)
+
+                    logger_params['writer'] = SummaryWriter(self.log_path)
+                else:
+                    self.log_path = writer.log_dir
+
+            logger = make_logger(**logger_params)
+
+        self.logger = AgentLoggerWrapper(self, logger)
 
     def _setup_replay_buffer(self, replay_buffer):
         if isinstance(replay_buffer, Number):
