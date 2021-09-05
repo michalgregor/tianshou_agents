@@ -550,31 +550,3 @@ class OffPolicyAgent(Agent):
 
         self.policy.train()
         return offpolicy_trainer(**params)
-
-class AgentPreset:
-    def __init__(
-        self,
-        agent_class: Type[Agent],
-        default_params: dict
-    ):
-        """The class used to construct presets.
-
-        Args:
-            agent_class (Type[Agent]): The class of the agent.
-            default_params ([type]): The default parameters associated with
-                this preset.
-
-        To see more info about the parameters, consult the docstring of
-        ``self.agent_class``.
-        """
-        self.default_params = default_params
-        self.agent_class = agent_class
-
-    def __call__(self, *args, **kwargs):
-        """Creates an instance of the agent, intialized using the default
-        arguments from this preset, updated using the keyword arguments
-        passed through this call.
-        """
-        params = self.default_params.copy()
-        params.update(kwargs)
-        return self.agent_class(*args, **params)

@@ -1,9 +1,9 @@
-from tianshou import exploration
-from .agent import AgentPreset, OffPolicyAgent
+from .agent import OffPolicyAgent
+from .preset import AgentPreset
 from .network import MLP
 from tianshou.policy import SACPolicy
 from tianshou.env import DummyVectorEnv
-from tianshou.exploration import BaseNoise, OUNoise
+from tianshou.exploration import BaseNoise
 from tianshou.utils.net.continuous import ActorProb, Critic
 from typing import Any, Optional, Union, Callable, Dict
 from torch.optim import Optimizer

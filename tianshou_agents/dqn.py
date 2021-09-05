@@ -1,4 +1,5 @@
-from .agent import AgentPreset, OffPolicyAgent
+from .agent import OffPolicyAgent
+from .preset import AgentPreset
 from .schedule import Schedule, ConstSchedule, ExponentialSchedule
 from .callback import ScheduleCallback
 from .network import MLP
