@@ -281,6 +281,11 @@ class Agent:
         """
         raise NotImplementedError()
 
+    def reset_progress_counters(self):
+        self.env_step = 0
+        self.epoch = 0
+        self.gradient_step = 0
+
     @abc.abstractmethod
     def train(self, **kwargs):
         raise NotImplementedError()
@@ -303,7 +308,7 @@ class Agent:
         Returns:
             Dict[str, Any]: The results from the test collector.
         """        
-        if not seed is None: self.test_envs.seed(seed)
+        if not seed is None: self._apply_seed(seed)
         self._test_fn(self.epoch, self.env_step)
         self.policy.eval()
     
