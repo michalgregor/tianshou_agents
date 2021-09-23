@@ -141,7 +141,7 @@ class SACAgent(OffPolicyAgent):
         del policy_kwargs['kwargs']
         del policy_kwargs['task_name']
 
-        super().__init__(task_name=task_name, method_name='dqn',
+        super().__init__(task_name=task_name, method_name='sac',
                          **kwargs, **policy_kwargs)
 
     def _setup_policy(self,
