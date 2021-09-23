@@ -4,7 +4,6 @@ from .schedule import Schedule, ConstSchedule, ExponentialSchedule
 from .callback import ScheduleCallback
 from .network import MLP
 from tianshou.policy import DQNPolicy
-from tianshou.env import DummyVectorEnv
 from typing import Any, Optional, Union, Callable, Dict
 from torch.optim import Optimizer
 from numbers import Number
@@ -153,8 +152,8 @@ dqn_classic_hyperparameters = {
     # general
     'train_envs': 16,
     'test_envs': 100,
-    'train_env_class': DummyVectorEnv,
-    'test_env_class': DummyVectorEnv,
+    'train_env_class': None,
+    'test_env_class': None,
     'episode_per_test': None,
     'seed': None,
     'max_epoch': 10,
@@ -199,8 +198,8 @@ dqn_simple_hyperparameters = {
     # general
     'train_envs': 1,
     'test_envs': 100,
-    'train_env_class': DummyVectorEnv,
-    'test_env_class': DummyVectorEnv,
+    'train_env_class': None,
+    'test_env_class': None,
     'episode_per_test': None,
     'seed': None,
     'max_epoch': 10,

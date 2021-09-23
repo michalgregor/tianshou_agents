@@ -2,7 +2,6 @@ from .agent import OffPolicyAgent
 from .preset import AgentPreset
 from .network import MLP
 from tianshou.policy import SACPolicy
-from tianshou.env import DummyVectorEnv
 from tianshou.exploration import BaseNoise
 from tianshou.utils.net.continuous import ActorProb, Critic
 from typing import Any, Optional, Union, Callable, Dict
@@ -244,8 +243,8 @@ sac_simple_hyperparameters = {
     # general
     'train_envs': 1,
     'test_envs': 100,
-    'train_env_class': DummyVectorEnv,
-    'test_env_class': DummyVectorEnv,
+    'train_env_class': None,
+    'test_env_class': None,
     'episode_per_test': None,
     'seed': None,
     'max_epoch': 10,
@@ -292,8 +291,8 @@ sac_classic_hyperparameters = {
     # general
     'train_envs': 16,
     'test_envs': 100,
-    'train_env_class': DummyVectorEnv,
-    'test_env_class': DummyVectorEnv,
+    'train_env_class': None,
+    'test_env_class': None,
     'episode_per_test': None,
     'seed': None,
     'max_epoch': 10,
@@ -340,8 +339,8 @@ sac_pybullet_hyperparameters = {
     # general
     'train_envs': 1,
     'test_envs': 10,
-    'train_env_class': DummyVectorEnv,
-    'test_env_class': DummyVectorEnv,
+    'train_env_class': None,
+    'test_env_class': None,
     'episode_per_test': None,
     'seed': None,
     'max_epoch': 200,
