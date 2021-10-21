@@ -186,13 +186,16 @@ class Agent:
                 If a dictionary, it is interpreted as a set of keyword arguments
                 for constructing a logger. In that case, the constructor is to
                 be provided under key ``type``. If ``type`` is not present or
-                is None, then a TensorboardLogger is constructed. If a ``log_path``
-                key is provided, a tensorboard writer is set up with that path
-                automatically, unless already present in the keyword arguments.
-                If ``log_path`` is None and ``log_dir`` is provided, then the
-                path is constructed automatically by appending the name of the
-                environment and the name of the agent to it as subdirectories.
-                If ``log_dir`` is None as well, it defaults to ``log``.
+                is None, then a TensorboardLogger is constructed. In this case,
+                a tensorboard writer is set up automatically, unless already
+                present among the keyword arguments.
+
+                When auto-constructing a writer, the path defaults to "log".
+                If a ``log_path`` key is provided, the writer is set up with
+                that path. If ``log_path`` is None and ``log_dir`` is provided,
+                then the path is constructed automatically by appending the
+                name of the environment and the name of the agent to it as
+                subdirectories.
 
                 If a string is provided, it is interpreted as ``log_dir``.
 
@@ -347,18 +350,21 @@ class Agent:
         else:
             logger_params = logger.copy()
             make_logger = logger_params.pop("type", TensorboardLogger)
-            log_path = logger_params.get("log_path")
-            log_dir = logger_params.get("log_dir", "log")
-            writer = logger_params.get("writer")
 
             if make_logger == TensorboardLogger:
+                writer = logger_params.get("writer")
+
                 if writer is None:
+                    log_path = logger_params.pop("log_path")
+                    log_dir = logger_params.pop("log_dir", "log")
+
                     if not log_path is None:
                         self.log_path = log_path
                     else:
                         self.log_path = os.path.join(log_dir, task_name, method_name)
 
                     logger_params['writer'] = SummaryWriter(self.log_path)
+
                 else:
                     self.log_path = writer.log_dir
 
@@ -366,29 +372,30 @@ class Agent:
 
         self.logger = AgentLoggerWrapper(self, logger)
 
-    def _setup_replay_buffer(self, replay_buffer):
+    def _create_replay_buffer(self, replay_buffer):
         if isinstance(replay_buffer, Number):
-            self.replay_buffer = VectorReplayBuffer(
-                replay_buffer, len(self.train_envs))
+            return VectorReplayBuffer(replay_buffer, len(self.train_envs))
         elif isinstance(replay_buffer, ReplayBuffer):
-            self.replay_buffer = replay_buffer
+            return replay_buffer
         else:
-            self.replay_buffer = replay_buffer(len(self.train_envs))
+            return replay_buffer(len(self.train_envs))
 
     def _setup_collectors(self,
         train_collector, test_collector,
         exploration_noise_train,
-        exploration_noise_test
+        exploration_noise_test,
+        replay_buffer
     ):
         # collectors
         if isinstance(train_collector, Collector):
             self.train_collector = train_collector
         else:
             if train_collector is None: train_collector = Collector
+            replay_buffer = self._create_replay_buffer(replay_buffer)
             self.train_collector = train_collector(
                 policy=self.policy,
                 env=self.train_envs,
-                buffer=self.replay_buffer,
+                buffer=replay_buffer,
                 exploration_noise=exploration_noise_train
             )
 
