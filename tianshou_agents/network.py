@@ -76,6 +76,9 @@ class RLNetwork(nn.Module):
             assert len(shape) == 1
             self.output_dim = shape[0]
 
+        if self.output_dim == 0:
+            raise ValueError("The output_dim of a model cannot be zero; make sure that you check for num_outputs==0 if you are using a custom architecture.")
+
         if self.use_dueling:  # dueling DQN
             q_kwargs, v_kwargs = dueling_param  # type: ignore
             q_output_dim, v_output_dim = 0, 0
