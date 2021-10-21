@@ -270,9 +270,8 @@ class Agent:
             self.episode_per_test = episode_per_test
 
         self._setup_policy(**policy_kwargs)
-        self._setup_replay_buffer(replay_buffer)
         self._setup_collectors(train_collector, test_collector,
-            exploration_noise_train, exploration_noise_test)
+            exploration_noise_train, exploration_noise_test, replay_buffer)
         self._setup_logger(logger, task_name, method_name)
 
     @abc.abstractmethod
