@@ -175,9 +175,12 @@ class SACAgent(OffPolicyAgent):
             self.actor_net, self.action_shape,
             max_action=max_action, device=self._device, unbounded=True
         ).to(self._device)
+
         self.actor_optim = self.construct_optim(
             actor_optim, self.actor.parameters()
         )
+
+        self._state_objs.append('actor_optim')
 
         # critic 1
         self.critic1_net = self.construct_rlnet(
@@ -187,9 +190,12 @@ class SACAgent(OffPolicyAgent):
 
         self.critic1 = Critic(
             self.critic1_net, device=self._device).to(self._device)
+
         self.critic1_optim = self.construct_optim(
             critic1_optim, self.critic1.parameters()
         )
+
+        self._state_objs.append('critic1_optim')
 
         # critic 2
         self.critic2_net = self.construct_rlnet(
@@ -199,9 +205,12 @@ class SACAgent(OffPolicyAgent):
 
         self.critic2 = Critic(
             self.critic2_net, device=self._device).to(self._device)
+
         self.critic2_optim = self.construct_optim(
             critic2_optim, self.critic2.parameters()
         )
+
+        self._state_objs.append('critic2_optim')
 
         # alpha tuning
         if auto_alpha or not target_entropy is None:

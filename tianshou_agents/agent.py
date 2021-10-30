@@ -3,10 +3,11 @@ from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
 from tianshou.utils import BaseLogger, TensorboardLogger
 from tianshou.trainer import offpolicy_trainer
 from .network import RLNetwork
-from .utils import AgentLoggerWrapper
+from .utils import AgentLoggerWrapper, StateDictObject
 from torch.optim import Optimizer
 
 from functools import partial
+from collections import OrderedDict
 from torch.utils.tensorboard import SummaryWriter
 from typing import List, Optional, Union, Callable, Type, Dict, Any
 from gym.spaces import Tuple as GymTuple
@@ -42,7 +43,7 @@ def setup_envs(
         if train_env_class is None:
             train_env_class = DummyVectorEnv if len(train_envs) == 1 else SubprocVectorEnv
 
-        train_envs = train_env_class(train_envs)
+        train_envs = train_env_class([lambda: env if isinstance(env, gym.Env) else env for env in train_envs])
     elif isinstance(train_envs, BaseVectorEnv):
         pass
     else:
@@ -59,7 +60,7 @@ def setup_envs(
         if test_env_class is None:
             test_env_class = DummyVectorEnv if len(test_envs) == 1 else SubprocVectorEnv
 
-        test_envs = test_env_class(test_envs)
+        test_envs = test_env_class([lambda: env if isinstance(env, gym.Env) else env for env in test_envs])
     elif isinstance(test_envs, BaseVectorEnv):
         test_envs = test_envs
     else:
@@ -67,12 +68,12 @@ def setup_envs(
 
     return train_envs, test_envs
 
-class Agent:
+class Agent(StateDictObject):
     def __init__(
         self, task_name: str, method_name: str,
         max_epoch: int = 10,
-        train_envs: Union[int, List[gym.Env], BaseVectorEnv] = 1,
-        test_envs: Union[int, List[gym.Env], BaseVectorEnv] = 1,
+        train_envs: Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv] = 1,
+        test_envs: Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv] = 1,
         replay_buffer: Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]] = 1000000,
         step_per_epoch: int = 10000,
         step_per_collect: Optional[int] = None,
@@ -100,6 +101,11 @@ class Agent:
         To subclass this, you need to implement at least the following:
             * ``_setup_policy(self, **kwargs)``;
             * ``train(self, **kwargs)``;
+            * add objects whose state_dict should be included in the agent's
+              state_dict() [i.e. their state changes as the agent trains and
+              should be saved when checkpointing the agent] to the
+              self._state_objs dictionary - or you can also override
+              state_dict() in the subclass instead;
 
         Most often, though, ``train`` would be inhereted through subclasses
         such as ``OffPolicyAgent`` or ``OnPolicyAgent``.
@@ -116,16 +122,15 @@ class Agent:
                 training process might be finished before reaching ``max_epoch``
                 if the stop criterion returns ``True``; this behaviour can be
                 overriden using the ``stop_criterion`` argument.
-            train_envs (Union[int, List[gym.Env], BaseVectorEnv], optional): Either the
-                collection of environment instances used to train the agent or
+            train_envs (Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv], optional):
+                Either a collection of environment instances / callables that return environment instances or the number of environments to be used (the collection of
+                environments is constructed automatically using
+                ``train_env_class``); these environments are used to train the agent.
+            test_envs (Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv], optional):
+                Either a collection of environment instances / callables that return environment instances or
                 the number of environments to be used (the collection of
                 environments is constructed automatically using
-                ``train_env_class``).
-            test_envs (Union[int, List[gym.Env], BaseVectorEnv], optional): Either the
-                collection of environment instances used to test the agent or
-                the number of environments to be used (the collection of
-                environments is constructed automatically using
-                ``test_env_class``).
+                ``test_env_class``); these environments are used for testing the agent.
             replay_buffer (Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]], optional):
                 The replay buffer to be used for experience collection. Note
                 that in Tianshou replay buffers are used by both offline and
@@ -226,6 +231,8 @@ class Agent:
             Any additional keyword arguments are passed to the policy
             construction method (``_setup_policy(self, **kwargs)``).
         """
+        super().__init__()
+
         self._device = device
         self.max_epoch = max_epoch
         self.step_per_epoch = step_per_epoch
@@ -237,6 +244,18 @@ class Agent:
         self.epoch = None
         self.env_step = None
         self.gradient_step = None
+
+        self._state_objs.extend([
+            'stop_criterion',
+            'train_callbacks',
+            'test_callbacks',
+            'epoch',
+            'env_step',
+            'gradient_step',
+            'train_collector.buffer',
+            'test_collector.buffer',
+            'policy'
+        ])
 
         # envs
         self._setup_envs(

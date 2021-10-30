@@ -85,7 +85,7 @@ class DQNAgent(OffPolicyAgent):
         super().__init__(task_name=task_name, method_name='dqn',
                          **kwargs, **policy_kwargs)
 
-    def _setup_policy(self, 
+    def _setup_policy(self,
         is_double, eps_test, eps_train,
         gamma, target_update_freq,
         estimation_step, reward_normalization, qnetwork, optim
@@ -98,6 +98,8 @@ class DQNAgent(OffPolicyAgent):
             optim, self.qnetwork.parameters()
         )
 
+        self._state_objs.append('optim')
+
         # the algo
         self.policy = DQNPolicy(
             self.qnetwork, self.optim, gamma, estimation_step,
@@ -108,22 +110,22 @@ class DQNAgent(OffPolicyAgent):
 
         # eps schedules
         if isinstance(eps_train, Schedule):
-            self.eps_train = eps_train
+            eps_train = eps_train
         elif isinstance(eps_train, Number):
-            self.eps_train = ConstSchedule(eps_train)
+            eps_train = ConstSchedule(eps_train)
         else:
-            self.eps_train = eps_train(self.max_epoch, self.step_per_epoch)
+            eps_train = eps_train(self.max_epoch, self.step_per_epoch)
 
-        self.train_callbacks.append(ScheduleCallback(self.policy.set_eps, self.eps_train))
+        self.train_callbacks.append(ScheduleCallback(self.policy.set_eps, eps_train))
 
         if isinstance(eps_test, Schedule):
-            self.eps_test = eps_test
+            eps_test = eps_test
         elif isinstance(eps_test, Number):
-            self.eps_test = ConstSchedule(eps_test)
+            eps_test = ConstSchedule(eps_test)
         else:
-            self.eps_test = eps_test(self.max_epoch, self.step_per_epoch)
+            eps_test = eps_test(self.max_epoch, self.step_per_epoch)
 
-        self.test_callbacks.append(ScheduleCallback(self.policy.set_eps, self.eps_test))
+        self.test_callbacks.append(ScheduleCallback(self.policy.set_eps, eps_test))
 
 # classic
 
