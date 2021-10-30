@@ -20,6 +20,7 @@ class SACAgent(OffPolicyAgent):
         tau: float =  0.005,
         alpha: float = 0.2,
         auto_alpha: bool = True,
+        target_entropy: Optional[float] = None,
         exploration_noise: Optional[BaseNoise] = None,
         reward_normalization: bool = False,
         estimation_step: int = 1,
@@ -77,6 +78,10 @@ class SACAgent(OffPolicyAgent):
                 tuned automatically during training.
             auto_alpha (bool, optional): Specifies whether alpha should be
                 tuned automatically during training.
+            target_entropy (float, optional): Specifies the target entropy;
+                if not None, this automatically toggles on auto_alpha=True;
+                if None, and auto_alpha == True, it is set to
+                -np.prod(self.action_space.shape).
             exploration_noise (BaseNoise, optional):
                 Noise added to actions for exploration. This is useful when
                 solving hard-exploration problems. By default this is None,
@@ -149,6 +154,7 @@ class SACAgent(OffPolicyAgent):
         critic2,
         gamma, tau,
         auto_alpha, alpha,
+        target_entropy,
         exploration_noise,
         reward_normalization,
         estimation_step,
@@ -198,8 +204,10 @@ class SACAgent(OffPolicyAgent):
         )
 
         # alpha tuning
-        if auto_alpha:
-            target_entropy = -np.prod(self.action_space.shape)
+        if auto_alpha or not target_entropy is None:
+            if target_entropy is None:
+                target_entropy = -np.prod(self.action_space.shape)
+
             log_alpha = torch.zeros(1, requires_grad=True, device=self._device)
             alpha_optim = self.construct_optim(
                 alpha_optim, [log_alpha]
