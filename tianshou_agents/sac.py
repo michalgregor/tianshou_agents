@@ -259,10 +259,10 @@ sac_simple_hyperparameters = {
     'prefill_steps': None,
     # general
     'train_envs': 1,
-    'test_envs': 100,
+    'test_envs': 5,
     'train_env_class': None,
     'test_env_class': None,
-    'episode_per_test': None,
+    'episode_per_test': 10,
     'seed': None,
     'max_epoch': 10,
     'step_per_epoch': 80000,
