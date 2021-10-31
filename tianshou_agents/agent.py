@@ -305,7 +305,11 @@ class Agent(StateDictObject):
             self.state_shape = self.observation_space.shape or self.observation_space.n
 
         self.action_shape = self.action_space.shape or self.action_space.n
-        self.reward_threshold = self.train_envs.spec[0].reward_threshold
+
+        try:
+            self.reward_threshold = self.train_envs.spec[0].reward_threshold
+        except AttributeError:
+            self.reward_threshold = None
 
         # episode per test
         if episode_per_test is None:
