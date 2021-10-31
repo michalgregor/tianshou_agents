@@ -1,11 +1,13 @@
 import abc
 import numpy as np
+from .utils import StateDictObject
 
-class Schedule:
+class Schedule(StateDictObject):
     def __init__(self, method='step'):
         """
         :param method: One of 'step' and 'epoch'.
         """
+        super().__init__()
         self._method = method
 
     @abc.abstractmethod

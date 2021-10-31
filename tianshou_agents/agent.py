@@ -2,12 +2,11 @@ from tianshou.data import ReplayBuffer, VectorReplayBuffer, Collector
 from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
 from tianshou.utils import BaseLogger, TensorboardLogger
 from tianshou.trainer import offpolicy_trainer
+from .callback import SaveCallback, CheckpointCallback
 from .network import RLNetwork
 from .utils import AgentLoggerWrapper, StateDictObject
 from torch.optim import Optimizer
-
 from functools import partial
-from collections import OrderedDict
 from torch.utils.tensorboard import SummaryWriter
 from typing import List, Optional, Union, Callable, Type, Dict, Any
 from gym.spaces import Tuple as GymTuple
@@ -83,8 +82,10 @@ class Agent(StateDictObject):
         train_env_class: Optional[Type[BaseVectorEnv]] = None,
         test_env_class: Optional[Type[BaseVectorEnv]] = None,
         episode_per_test: Optional[int] = None,
-        train_callbacks: Optional[List[Callable[[int, int], None]]] = None,
-        test_callbacks: Optional[List[Callable[[int, int], None]]] = None,
+        train_callbacks: Optional[List[Callable[[int, int, int, 'Agent'], None]]] = None,
+        test_callbacks: Optional[List[Callable[[int, int, int, 'Agent'], None]]] = None,
+        save_callbacks: Optional[List[Callable[[int, int, int, 'Agent'], None]]] = None,
+        save_checkpoint_callbacks: Optional[List[Callable[[int, int, int, 'Agent'], None]]] = None,
         train_collector: Optional[Union[Collector, Callable[..., Collector]]] = None,
         test_collector: Optional[Union[Collector, Callable[..., Collector]]] = None,
         seed: int = None,
@@ -104,8 +105,9 @@ class Agent(StateDictObject):
             * add objects whose state_dict should be included in the agent's
               state_dict() [i.e. their state changes as the agent trains and
               should be saved when checkpointing the agent] to the
-              self._state_objs dictionary - or you can also override
-              state_dict() in the subclass instead;
+              self._state_objs list (by appending their attribute name or
+              nested attribute name as a string) - or you can also override
+              state_dict() in the subclass, if necessary;
 
         Most often, though, ``train`` would be inhereted through subclasses
         such as ``OffPolicyAgent`` or ``OnPolicyAgent``.
@@ -164,12 +166,31 @@ class Agent(StateDictObject):
                 used to represent the collection of testing environments. See
                 also ``test_envs``.
             episode_per_test (int, optional): The number of episodes for one policy evaluation.
-            train_callbacks (List[Callable[[int, int], None]]): A list of
+            train_callbacks (List[Callable[[int, int, int, Agent], None]]): A list of
                 callbacks invoked at the beginning of each training step.
-                The signature of the callbacks is ``f(epoch: int, env_step: int) -> None``.
-            test_callbacks (List[Callable[[int, int], None]]): A list of
+                The signature of the callbacks is
+                ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+            test_callbacks (List[Callable[[int, int, int, Agent], None]]): A list of
                 callbacks invoked at the beginning of each testing step.
-                The signature of the callbacks is ``f(epoch: int, env_step: int) -> None``.
+                The signature of the callbacks is
+                ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+            save_callbacks (List[Callable[[int, int, int, Agent], None]]): A list of
+                callbacks invoked every time the undiscounted average mean reward in
+                evaluation phase gets better.
+
+                The signature of the callbacks is
+                ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+
+                If None, a callback that makes checkpoints is constructed
+                automatically. To disable checkpointing altogether, pass an
+                empty list.
+            save_checkpoint_callbacks (List[Callable[[int, int, int, Agent], None]]):
+                A list of callbacks invoked after every step of training.
+
+                The signature of the callbacks is
+                ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+
+                If None, an empty list is created.
             train_collector (Optional[Union[Collector, Callable[..., Collector]]], optional): 
                 The collector used to collect experience during training. It can
                 either be a ``Collector`` instance or ``callable(policy, envs, buffer, exploration_noise)``.
@@ -241,6 +262,8 @@ class Agent(StateDictObject):
         self.stop_criterion = stop_criterion
         self.train_callbacks = train_callbacks or []
         self.test_callbacks = test_callbacks or []
+        self.save_callbacks = save_callbacks
+        self.save_checkpoint_callbacks = save_checkpoint_callbacks
         self.epoch = None
         self.env_step = None
         self.gradient_step = None
@@ -249,6 +272,8 @@ class Agent(StateDictObject):
             'stop_criterion',
             'train_callbacks',
             'test_callbacks',
+            'save_callbacks',
+            'save_checkpoint_callbacks',
             'epoch',
             'env_step',
             'gradient_step',
@@ -292,6 +317,12 @@ class Agent(StateDictObject):
         self._setup_collectors(train_collector, test_collector,
             exploration_noise_train, exploration_noise_test, replay_buffer)
         self._setup_logger(logger, task_name, method_name)
+
+        if self.save_callbacks is None:
+            self.save_callbacks = [SaveCallback(self.log_path)]
+
+        if self.save_checkpoint_callbacks is None:
+            self.save_checkpoint_callbacks = []
 
     @abc.abstractmethod
     def _setup_policy(self, **kwargs):
@@ -429,7 +460,12 @@ class Agent(StateDictObject):
             )
 
     def _save_fn(self, policy):
-        torch.save(self.policy.state_dict(), os.path.join(self.log_path, 'policy.pth'))
+        for callback in self.save_callbacks:
+            callback(self.epoch, self.env_step, self.gradient_step, self)
+
+    def _save_checkpoint_fn(self, epoch, env_step, gradient_step):
+        for callback in self.save_checkpoint_callbacks:
+            callback(self.epoch, self.env_step, self.gradient_step, self)
 
     def _stop_fn(self, mean_rewards):
         if callable(self.stop_criterion):
@@ -445,11 +481,11 @@ class Agent(StateDictObject):
         self.epoch = epoch
         self.env_step = env_step
         for callback in self.train_callbacks:
-            callback(epoch, env_step)
+            callback(epoch, env_step, self.gradient_step, self)
 
     def _test_fn(self, epoch, env_step):
         for callback in self.test_callbacks:
-            callback(epoch, env_step)
+            callback(epoch, env_step, self.gradient_step, self)
 
     def _apply_seed(self, seed):
         if not seed is None:
@@ -563,6 +599,7 @@ class OffPolicyAgent(Agent):
             train_fn=self._train_fn,
             test_fn=self._test_fn,
             save_fn=self._save_fn,
+            save_checkpoint_fn=self._save_checkpoint_fn,
             logger=self.logger,
             resume_from_log=True
         )

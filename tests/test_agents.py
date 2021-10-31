@@ -27,7 +27,7 @@ class TestAgentMixin:
             test_envs=5
         )
 
-        results = agent.train(verbose=False)    
+        results = agent.train(verbose=False)
         self.assertIsInstance(results, dict)
 
         test_result = agent.test()
