@@ -104,7 +104,7 @@ class AgentLoggerWrapper(BaseLogger):
         self.logger = logger
 
     def __getattr__(self, name):
-        return getattr(self.preset, name)
+        return getattr(self.logger, name)
 
     def __dir__(self):
         d = set(self.logger.__dir__())
