@@ -68,9 +68,9 @@ class RLNetwork(nn.Module):
             self.output_dim = self.model.output_dim
         else:
             if isinstance(input_dim, list):
-                dummy_input = [torch.zeros(1, ind, device=device) for ind in input_dim]
+                dummy_input = [torch.zeros(5, ind, device=device) for ind in input_dim]
             else:
-                dummy_input = torch.zeros(1, input_dim, device=device)
+                dummy_input = torch.zeros(5, input_dim, device=device)
 
             shape = self.model(dummy_input).shape[1:]
             assert len(shape) == 1
