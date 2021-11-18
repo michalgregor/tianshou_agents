@@ -546,6 +546,7 @@ class OffPolicyAgent(Agent):
     def __init__(self,
         batch_size: int = 128,
         prefill_steps: int = 0,
+        test_in_train = False,
         **kwargs
     ):
         """The base agent class for off-policy agents.
@@ -562,6 +563,7 @@ class OffPolicyAgent(Agent):
         """
         super().__init__(**kwargs)
 
+        self.test_in_train = test_in_train
         self.batch_size = batch_size
 
         if prefill_steps is None:
@@ -605,7 +607,8 @@ class OffPolicyAgent(Agent):
             save_fn=self._save_fn,
             save_checkpoint_fn=self._save_checkpoint_fn,
             logger=self.logger,
-            resume_from_log=True
+            resume_from_log=True,
+            test_in_train=self.test_in_train,
         )
         params.update(kwargs)
         update_per_collect = params.pop("update_per_collect")
