@@ -17,55 +17,34 @@ import gym
 import abc
 import os
 
-def setup_envs(
-    task_name, task, test_task,
-    train_env_class, train_envs,
-    test_env_class, test_envs
-):
-    """
-    This method is called before seeding so it needs to be deterministic.
-    """
-    if task is None:
-        task = partial(gym.make, task_name)
+def resolve_tasks(train_task, test_task, task_name):
+    if train_task is None:
+        train_task = partial(gym.make, task_name)
 
     if test_task is None:
-        test_task = task
+        test_task = train_task
 
-    if isinstance(train_envs, int):
-        if train_env_class is None:
-            train_env_class = DummyVectorEnv if train_envs == 1 else SubprocVectorEnv
+    return train_task, test_task
 
-        train_envs = train_env_class(
-            [task for _ in range(train_envs)]
+def setup_envs(task, env_class, envs):
+    if isinstance(envs, int):
+        if env_class is None:
+            env_class = DummyVectorEnv if envs == 1 else SubprocVectorEnv
+
+        envs = env_class(
+            [task for _ in range(envs)]
         )
-    elif isinstance(train_envs, list):
-        if train_env_class is None:
-            train_env_class = DummyVectorEnv if len(train_envs) == 1 else SubprocVectorEnv
+    elif isinstance(envs, list):
+        if env_class is None:
+            env_class = DummyVectorEnv if len(envs) == 1 else SubprocVectorEnv
 
-        train_envs = train_env_class([lambda: env if isinstance(env, gym.Env) else env for env in train_envs])
-    elif isinstance(train_envs, BaseVectorEnv):
+        envs = env_class([lambda: env if isinstance(env, gym.Env) else env for env in envs])
+    elif isinstance(envs, BaseVectorEnv):
         pass
     else:
-        raise TypeError(f"train_envs: a BaseVectorEnv or an integer expected, got '{train_envs}'.")
+        raise TypeError(f"envs: a BaseVectorEnv or an integer expected, got '{envs}'.")
 
-    if isinstance(test_envs, int):
-        if test_env_class is None:
-            test_env_class = DummyVectorEnv if test_envs == 1 else SubprocVectorEnv
-
-        test_envs = test_env_class(
-            [test_task for _ in range(test_envs)]
-        )
-    elif isinstance(test_envs, list):
-        if test_env_class is None:
-            test_env_class = DummyVectorEnv if len(test_envs) == 1 else SubprocVectorEnv
-
-        test_envs = test_env_class([lambda: env if isinstance(env, gym.Env) else env for env in test_envs])
-    elif isinstance(test_envs, BaseVectorEnv):
-        test_envs = test_envs
-    else:
-        raise TypeError(f"test_envs: a BaseVectorEnv or an integer expected, got '{test_envs}'.")
-
-    return train_envs, test_envs
+    return envs
 
 class Agent(StateDictObject):
     def __init__(
@@ -282,22 +261,26 @@ class Agent(StateDictObject):
             'policy'
         ])
 
-        # envs
-        self._setup_envs(
-            task_name, task, test_task,
-            train_env_class, train_envs,
-            test_env_class, test_envs
-        )
-
         # seed
         self._apply_seed(seed)
 
-        if self.step_per_collect is None:
-            self.step_per_collect = len(self.train_envs)
+        # resolve env constructors
+        task, test_task = resolve_tasks(task, test_task, task_name)
+
+        # resolve collectors
+        self._resolve_collectors(train_collector, test_collector)
+
+        # setup environments
+        self._train_envs, self._test_envs = self._setup_envs(
+            task, test_task,
+            train_env_class, train_envs,
+            test_env_class, test_envs,
+            seed
+        )
 
         # spaces
-        self.observation_space = self.train_envs.observation_space[0]
-        self.action_space = self.train_envs.action_space[0]
+        self.observation_space = self._train_envs.observation_space[0]
+        self.action_space = self._train_envs.action_space[0]
 
         if isinstance(self.observation_space, GymTuple):
             self.state_shape = (osp.shape or osp.n for osp in self.observation_space)
@@ -307,26 +290,44 @@ class Agent(StateDictObject):
         self.action_shape = self.action_space.shape or self.action_space.n
 
         try:
-            self.reward_threshold = self.train_envs.spec[0].reward_threshold
+            self.reward_threshold = self._train_envs.spec[0].reward_threshold
         except AttributeError:
             self.reward_threshold = None
 
         # episode per test
         if episode_per_test is None:
-            self.episode_per_test = len(self.test_envs)
+            self.episode_per_test = len(self._test_envs)
         else:
             self.episode_per_test = episode_per_test
 
         self._setup_policy(**policy_kwargs)
-        self._setup_collectors(train_collector, test_collector,
-            exploration_noise_train, exploration_noise_test, replay_buffer)
+        self._setup_collectors(
+            train_collector, test_collector,
+            exploration_noise_train, exploration_noise_test,
+            replay_buffer,
+            self._train_envs, self._test_envs
+        )
         self._setup_logger(logger, task_name, method_name)
+
+        if self.step_per_collect is None:
+            self.step_per_collect = self.train_collector.env_num
 
         if self.save_callbacks is None:
             self.save_callbacks = [SaveCallback(self.log_path)]
 
         if self.save_checkpoint_callbacks is None:
             self.save_checkpoint_callbacks = []
+
+    def _resolve_collectors(self, train_collector, test_collector):
+        if isinstance(train_collector, Collector):
+            self.train_collector = train_collector
+        else:
+            self.train_collector = None
+
+        if isinstance(test_collector, Collector):
+            self.test_collector = test_collector
+        else:
+            self.test_collector = None       
 
     @abc.abstractmethod
     def _setup_policy(self, **kwargs):
@@ -374,18 +375,26 @@ class Agent(StateDictObject):
         )
 
     def _setup_envs(
-        self, task_name, task, test_task,
+        self, train_task, test_task,
         train_env_class, train_envs,
-        test_env_class, test_envs
+        test_env_class, test_envs,
+        seed
     ):
-        """
-        This method is called before seeding so it needs to be deterministic.
-        """
-        self.train_envs, self.test_envs = setup_envs(
-            task_name, task, test_task,
-            train_env_class, train_envs,
-            test_env_class, test_envs
-        )
+        if self.train_collector is None:
+            train_envs = setup_envs(train_task, train_env_class, train_envs)
+        else:
+            train_envs = self.train_collector.env
+
+        if self.test_collector is None:
+            test_envs = setup_envs(test_task, test_env_class, test_envs)
+        else:
+            test_envs = self.test_collector.env
+
+        if not seed is None:
+            train_envs.seed(seed)
+            test_envs.seed(seed)
+
+        return train_envs, test_envs
 
     def _setup_logger(self, logger, task_name, method_name):
         self.log_path = None
@@ -425,40 +434,37 @@ class Agent(StateDictObject):
 
         self.logger = AgentLoggerWrapper(self, logger)
 
-    def _create_replay_buffer(self, replay_buffer):
+    def _create_replay_buffer(self, replay_buffer, envs):
         if isinstance(replay_buffer, Number):
-            return VectorReplayBuffer(replay_buffer, len(self.train_envs))
+            return VectorReplayBuffer(replay_buffer, len(envs))
         elif isinstance(replay_buffer, ReplayBuffer):
             return replay_buffer
         else:
-            return replay_buffer(len(self.train_envs))
+            return replay_buffer(len(envs))
 
     def _setup_collectors(self,
         train_collector, test_collector,
         exploration_noise_train,
         exploration_noise_test,
-        replay_buffer
+        replay_buffer,
+        train_envs, test_envs
     ):
         # collectors
-        if isinstance(train_collector, Collector):
-            self.train_collector = train_collector
-        else:
+        if self.train_collector is None:
             if train_collector is None: train_collector = Collector
-            replay_buffer = self._create_replay_buffer(replay_buffer)
+            replay_buffer = self._create_replay_buffer(replay_buffer, train_envs)
             self.train_collector = train_collector(
                 policy=self.policy,
-                env=self.train_envs,
+                env=train_envs,
                 buffer=replay_buffer,
                 exploration_noise=exploration_noise_train
             )
 
-        if isinstance(test_collector, Collector):
-            self.test_collector = test_collector
-        else:
+        if self.test_collector is None:
             if test_collector is None: test_collector = Collector
             self.test_collector = test_collector(
                 policy=self.policy,
-                env=self.test_envs,
+                env=test_envs,
                 buffer=None,
                 exploration_noise=exploration_noise_test
             )
@@ -495,8 +501,6 @@ class Agent(StateDictObject):
         if not seed is None:
             np.random.seed(seed)
             torch.manual_seed(seed)
-            self.train_envs.seed(seed)
-            self.test_envs.seed(seed)
 
     def construct_rlnet(
         self, module, state_shape, action_shape, **kwargs
@@ -567,7 +571,7 @@ class OffPolicyAgent(Agent):
         self.batch_size = batch_size
 
         if prefill_steps is None:
-            self.prefill_steps = self.batch_size * len(self.train_envs)
+            self.prefill_steps = self.batch_size * self.train_collector.env_num
         else:
             self.prefill_steps = prefill_steps
 

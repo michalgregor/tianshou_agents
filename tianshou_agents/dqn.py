@@ -9,7 +9,7 @@ from torch.optim import Optimizer
 from numbers import Number
 import torch
 
-class DQNAgent(OffPolicyAgent):    
+class DQNAgent(OffPolicyAgent):
     def __init__(
         self,
         task_name: str,
