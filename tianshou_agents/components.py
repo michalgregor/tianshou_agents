@@ -1,69 +1,111 @@
-from .utils import StateDictObject
-from tianshou.utils.logger.base import LOG_DATA_TYPE, BaseLogger
+from tianshou.data import Collector, VectorReplayBuffer, ReplayBuffer
+from tianshou.policy import RandomPolicy
+from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
+from .utils import StateDictObject, AgentLoggerWrapper
+from tianshou.utils.logger.base import BaseLogger
 from tianshou.utils import TensorboardLogger
 from torch.utils.tensorboard import SummaryWriter
-from typing import Optional, Tuple, Callable, Union, Dict, Any
+from typing import Optional, Union, Dict, Any
+from numbers import Number
+import gym
 import os
+
+def setup_envs(task, env_class, envs):
+    if isinstance(envs, int):
+        if env_class is None:
+            env_class = DummyVectorEnv if envs == 1 else SubprocVectorEnv
+
+        envs = env_class(
+            [task for _ in range(envs)]
+        )
+    elif isinstance(envs, list):
+        if env_class is None:
+            env_class = DummyVectorEnv if len(envs) == 1 else SubprocVectorEnv
+
+        envs = env_class([lambda: env if isinstance(env, gym.Env) else env for env in envs])
+    elif isinstance(envs, BaseVectorEnv):
+        pass
+    else:
+        raise TypeError(f"envs: a BaseVectorEnv or an integer expected, got '{envs}'.")
+
+    return envs
 
 class AgentCore:
     pass
 
-class AgentCollector:
-    pass
-
-class AgentLoggerWrapper(BaseLogger):
-    def __init__(self, logger: BaseLogger, **kwargs):
+class AgentCollector(StateDictObject):
+    def __init__(self,
+        train_collector, test_collector,
+        train_task, test_task,
+        train_env_class, test_env_class,
+        train_envs, test_envs,
+        exploration_noise_train, exploration_noise_test,
+        replay_buffer,
+        seed: int = None,
+        **kwargs
+    ):
         super().__init__(**kwargs)
-        self.logger = logger
 
-    def __getattr__(self, name):
-        return getattr(self.logger, name)
-
-    def __dir__(self):
-        d = set(self.logger.__dir__())
-        d.update(set(super().__dir__()))
-        return d
-
-    def write(self, step_type: str, step: int, data: LOG_DATA_TYPE) -> None:
-        return self.logger.write(step_type, step, data)
-
-    def log_train_data(self, collect_result: dict, step: int) -> None:
-        return self.logger.log_train_data(collect_result, step)
-
-    def log_test_data(self, collect_result: dict, step: int) -> None:
-        return self.logger.log_test_data(collect_result, step)
-
-    def log_update_data(self, update_result: dict, step: int) -> None:
-        self.gradient_step = step
-        return self.logger.log_update_data(update_result, step)
-
-    def save_data(
-        self,
-        epoch: int,
-        env_step: int,
-        gradient_step: int,
-        save_checkpoint_fn: Optional[Callable[[int, int, int], None]] = None,
-    ) -> None:
-        return self.logger.save_data(epoch, env_step, gradient_step, save_checkpoint_fn)
-
-    def restore_data(self) -> Tuple[int, int, int]:
-        epoch, env_step, gradient_step = (self.epoch,
-            self.env_step, self.gradient_step)
-
-        if (
-            not epoch is None and
-            not env_step is None and
-            not gradient_step is None
-        ):
-            return epoch, env_step, gradient_step
+        self._state_objs.extend([
+            'train_collector.buffer',
+            'test_collector.buffer',
+        ])
+        
+        if isinstance(train_collector, Collector):
+            self.train_collector = train_collector
         else:
-            return (0, 0, 0)
+            train_envs = setup_envs(train_task, train_env_class, train_envs)
+            placeholder_policy = RandomPolicy(train_envs.action_space[0])
+
+            if train_collector is None: train_collector = Collector
+            replay_buffer = self._create_replay_buffer(replay_buffer, train_envs)
+
+            self.train_collector = train_collector(
+                policy=placeholder_policy,
+                env=train_envs,
+                buffer=replay_buffer,
+                exploration_noise=exploration_noise_train
+            )
+
+        if isinstance(test_collector, Collector):
+            self.test_collector = test_collector
+        else:
+            test_envs = setup_envs(test_task, test_env_class, test_envs)
+            placeholder_policy = RandomPolicy(test_envs.action_space[0])
+
+            if test_collector is None: test_collector = Collector
+            self.test_collector = test_collector(
+                policy=placeholder_policy,
+                env=test_envs,
+                buffer=None,
+                exploration_noise=exploration_noise_test
+            )
+
+        if not seed is None:
+            self.train_collector.env.seed(seed)
+            self.test_collector.env.seed(seed)
+
+    @property
+    def train_envs(self):
+        return self.train_collector.env
+
+    @property
+    def test_envs(self):
+        return self.test_collector.env
+
+    def _create_replay_buffer(self, replay_buffer, envs):
+        if isinstance(replay_buffer, Number):
+            return VectorReplayBuffer(replay_buffer, len(envs))
+        elif isinstance(replay_buffer, ReplayBuffer):
+            return replay_buffer
+        else:
+            return replay_buffer(len(envs))
 
 class AgentLogger(StateDictObject, AgentLoggerWrapper):
     def __init__(self,
         logger: Optional[Union[str, Dict[str, Any], BaseLogger]],
         task_name: str, method_name: str,
-        seed
+        seed: int = None
     ):
         self.env_step = None
         self.epoch = None
