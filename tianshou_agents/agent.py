@@ -1,13 +1,13 @@
 from tianshou.data import ReplayBuffer, VectorReplayBuffer, Collector
 from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
-from tianshou.utils import BaseLogger, TensorboardLogger
+from tianshou.utils import BaseLogger
 from tianshou.trainer import offpolicy_trainer
-from .callback import SaveCallback, CheckpointCallback
+from .callback import SaveCallback
 from .network import RLNetwork
-from .utils import AgentLoggerWrapper, StateDictObject
+from .utils import StateDictObject
+from .components import AgentLogger
 from torch.optim import Optimizer
 from functools import partial
-from torch.utils.tensorboard import SummaryWriter
 from typing import List, Optional, Union, Callable, Type, Dict, Any
 from gym.spaces import Tuple as GymTuple
 from numbers import Number
@@ -15,7 +15,6 @@ import numpy as np
 import torch
 import gym
 import abc
-import os
 
 def resolve_tasks(train_task, test_task, task_name):
     if train_task is None:
@@ -243,9 +242,6 @@ class Agent(StateDictObject):
         self.test_callbacks = test_callbacks or []
         self.save_callbacks = save_callbacks
         self.save_checkpoint_callbacks = save_checkpoint_callbacks
-        self.epoch = None
-        self.env_step = None
-        self.gradient_step = None
 
         self._state_objs.extend([
             'stop_criterion',
@@ -253,9 +249,7 @@ class Agent(StateDictObject):
             'test_callbacks',
             'save_callbacks',
             'save_checkpoint_callbacks',
-            'epoch',
-            'env_step',
-            'gradient_step',
+            'logger',
             'train_collector.buffer',
             'test_collector.buffer',
             'policy'
@@ -307,13 +301,14 @@ class Agent(StateDictObject):
             replay_buffer,
             self._train_envs, self._test_envs
         )
-        self._setup_logger(logger, task_name, method_name)
+
+        self.logger = self._setup_logger(logger, task_name, method_name, seed)
 
         if self.step_per_collect is None:
             self.step_per_collect = self.train_collector.env_num
 
         if self.save_callbacks is None:
-            self.save_callbacks = [SaveCallback(self.log_path)]
+            self.save_callbacks = [SaveCallback(self.logger.log_path)]
 
         if self.save_checkpoint_callbacks is None:
             self.save_checkpoint_callbacks = []
@@ -338,10 +333,24 @@ class Agent(StateDictObject):
         """
         raise NotImplementedError()
 
+    @property
+    def env_step(self):
+        return self.logger.env_step
+
+    @property
+    def gradient_step(self):
+        return self.logger.gradient_step
+
+    @property
+    def epoch(self):
+        return self.logger.epoch
+
+    @property
+    def log_path(self):
+        return self.logger.log_path
+
     def reset_progress_counters(self):
-        self.env_step = 0
-        self.epoch = 0
-        self.gradient_step = 0
+        self.logger.reset_progress_counters()
 
     @abc.abstractmethod
     def train(self, **kwargs):
@@ -366,7 +375,7 @@ class Agent(StateDictObject):
             Dict[str, Any]: The results from the test collector.
         """        
         if not seed is None: self._apply_seed(seed)
-        self._test_fn(self.epoch, self.env_step)
+        self._test_fn(self.logger.epoch, self.logger.env_step)
         self.policy.eval()
     
         self.test_collector.reset()
@@ -396,43 +405,8 @@ class Agent(StateDictObject):
 
         return train_envs, test_envs
 
-    def _setup_logger(self, logger, task_name, method_name):
-        self.log_path = None
-
-        if isinstance(logger, BaseLogger):
-            pass
-        elif logger is None:
-            self.log_path = os.path.join("log", task_name, method_name)
-            writer = SummaryWriter(self.log_path)
-            logger = TensorboardLogger(writer)
-        elif isinstance(logger, str):
-            self.log_path = os.path.join(logger, task_name, method_name)
-            writer = SummaryWriter(self.log_path)
-            logger = TensorboardLogger(writer)
-        else:
-            logger_params = logger.copy()
-            make_logger = logger_params.pop("type", TensorboardLogger)
-
-            if make_logger == TensorboardLogger:
-                writer = logger_params.get("writer")
-
-                if writer is None:
-                    log_path = logger_params.pop("log_path")
-                    log_dir = logger_params.pop("log_dir", "log")
-
-                    if not log_path is None:
-                        self.log_path = log_path
-                    else:
-                        self.log_path = os.path.join(log_dir, task_name, method_name)
-
-                    logger_params['writer'] = SummaryWriter(self.log_path)
-
-                else:
-                    self.log_path = writer.log_dir
-
-            logger = make_logger(**logger_params)
-
-        self.logger = AgentLoggerWrapper(self, logger)
+    def _setup_logger(self, logger, task_name, method_name, seed):
+        return AgentLogger(logger, task_name, method_name, seed)
 
     def _create_replay_buffer(self, replay_buffer, envs):
         if isinstance(replay_buffer, Number):
@@ -471,11 +445,11 @@ class Agent(StateDictObject):
 
     def _save_fn(self, policy):
         for callback in self.save_callbacks:
-            callback(self.epoch, self.env_step, self.gradient_step, self)
+            callback(self.logger.epoch, self.logger.env_step, self.logger.gradient_step, self)
 
     def _save_checkpoint_fn(self, epoch, env_step, gradient_step):
         for callback in self.save_checkpoint_callbacks:
-            callback(self.epoch, self.env_step, self.gradient_step, self)
+            callback(self.logger.epoch, self.logger.env_step, self.logger.gradient_step, self)
 
     def _stop_fn(self, mean_rewards):
         if callable(self.stop_criterion):
@@ -488,14 +462,14 @@ class Agent(StateDictObject):
             return False
 
     def _train_fn(self, epoch, env_step):
-        self.epoch = epoch
-        self.env_step = env_step
+        self.logger.epoch = epoch
+        self.logger.env_step = env_step
         for callback in self.train_callbacks:
-            callback(epoch, env_step, self.gradient_step, self)
+            callback(epoch, env_step, self.logger.gradient_step, self)
 
     def _test_fn(self, epoch, env_step):
         for callback in self.test_callbacks:
-            callback(epoch, env_step, self.gradient_step, self)
+            callback(epoch, env_step, self.logger.gradient_step, self)
 
     def _apply_seed(self, seed):
         if not seed is None:
@@ -619,12 +593,12 @@ class OffPolicyAgent(Agent):
         params["update_per_step"] = update_per_collect / params["step_per_collect"]
 
         # check whether training should actually start
-        if self.epoch and self.epoch >= params["max_epoch"]: return
+        if self.logger.epoch and self.logger.epoch >= params["max_epoch"]: return
 
         # apply the seed
         self._apply_seed(seed)
         # if no training has been done yet
-        if self.env_step is None: self._init()
+        if self.logger.env_step is None: self._init()
 
         self.policy.train()
         return offpolicy_trainer(**params)
