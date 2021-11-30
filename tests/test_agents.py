@@ -1,4 +1,6 @@
 import unittest
+
+from tianshou.env.venvs import DummyVectorEnv
 from tianshou_agents.dqn import dqn_classic
 from tianshou_agents.sac import sac_classic
 
@@ -24,7 +26,9 @@ class TestAgentMixin:
             self.TaskName, task=self.Task, max_epoch=2,
             step_per_epoch=5,
             train_envs=5,
-            test_envs=5
+            test_envs=5,
+            train_env_class=DummyVectorEnv,
+            test_env_class=DummyVectorEnv,
         )
 
         results = agent.train(verbose=False)
