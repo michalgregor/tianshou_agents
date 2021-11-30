@@ -1,7 +1,7 @@
 from tianshou.data import Collector, VectorReplayBuffer, ReplayBuffer
-from tianshou.policy import RandomPolicy
+from tianshou.policy import RandomPolicy, BasePolicy
 from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
-from .utils import StateDictObject, AgentLoggerWrapper
+from .utils import StateDictObject, LoggerWrapper
 from tianshou.utils.logger.base import BaseLogger
 from tianshou.utils import TensorboardLogger
 from torch.utils.tensorboard import SummaryWriter
@@ -30,78 +30,70 @@ def setup_envs(task, env_class, envs):
 
     return envs
 
-class AgentCore:
-    pass
+class AgentPolicy(StateDictObject):
+    def __init__(self, policy):
+        self.policy = policy
+
+        self._state_objs.extend([
+            'policy'
+        ])
+
+    @property
+    def unwrapped(self):
+        return self.policy
+
+    @unwrapped.setter
+    def unwrapped(self, policy):
+        self.policy = policy
 
 class AgentCollector(StateDictObject):
     def __init__(self,
-        train_collector, test_collector,
-        train_task, test_task,
-        train_env_class, test_env_class,
-        train_envs, test_envs,
-        exploration_noise_train, exploration_noise_test,
-        replay_buffer,
-        seed: int = None,
-        **kwargs
-    ):
+        collector, task, env_class, envs, exploration_noise,
+        replay_buffer = None, seed: int = None, **kwargs
+    ):  
         super().__init__(**kwargs)
-
         self._state_objs.extend([
-            'train_collector.buffer',
-            'test_collector.buffer',
+            'collector.buffer'
         ])
-        
-        if isinstance(train_collector, Collector):
-            self.train_collector = train_collector
+
+        if isinstance(collector, Collector):
+            self.collector = collector
         else:
-            train_envs = setup_envs(train_task, train_env_class, train_envs)
-            placeholder_policy = RandomPolicy(train_envs.action_space[0])
+            envs = setup_envs(task, env_class, envs)
+            placeholder_policy = RandomPolicy(envs.action_space[0])
 
-            if train_collector is None: train_collector = Collector
-            replay_buffer = self._create_replay_buffer(replay_buffer, train_envs)
+            if collector is None: collector = Collector
+            replay_buffer = self._create_replay_buffer(replay_buffer, envs)
 
-            self.train_collector = train_collector(
+            self.collector = collector(
                 policy=placeholder_policy,
-                env=train_envs,
+                env=envs,
                 buffer=replay_buffer,
-                exploration_noise=exploration_noise_train
-            )
-
-        if isinstance(test_collector, Collector):
-            self.test_collector = test_collector
-        else:
-            test_envs = setup_envs(test_task, test_env_class, test_envs)
-            placeholder_policy = RandomPolicy(test_envs.action_space[0])
-
-            if test_collector is None: test_collector = Collector
-            self.test_collector = test_collector(
-                policy=placeholder_policy,
-                env=test_envs,
-                buffer=None,
-                exploration_noise=exploration_noise_test
+                exploration_noise=exploration_noise
             )
 
         if not seed is None:
-            self.train_collector.env.seed(seed)
-            self.test_collector.env.seed(seed)
+            self.collector.env.seed(seed)
 
     @property
-    def train_envs(self):
-        return self.train_collector.env
+    def unwrapped(self):
+        return self.collector
 
-    @property
-    def test_envs(self):
-        return self.test_collector.env
-
+    @unwrapped.setter
+    def unwrapped(self, value):
+        self.collector = value
+        
     def _create_replay_buffer(self, replay_buffer, envs):
-        if isinstance(replay_buffer, Number):
+        if replay_buffer is None:
+            return None
+        elif isinstance(replay_buffer, Number):
             return VectorReplayBuffer(replay_buffer, len(envs))
         elif isinstance(replay_buffer, ReplayBuffer):
             return replay_buffer
         else:
             return replay_buffer(len(envs))
 
-class AgentLogger(StateDictObject, AgentLoggerWrapper):
+class AgentLogger(StateDictObject, LoggerWrapper):
     def __init__(self,
         logger: Optional[Union[str, Dict[str, Any], BaseLogger]],
         task_name: str, method_name: str,

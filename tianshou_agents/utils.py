@@ -5,7 +5,9 @@ from typing import Any, List, Optional, Union, Tuple
 from collections import OrderedDict
 from functools import reduce
 from tianshou.utils.logger.base import LOG_DATA_TYPE, BaseLogger
-from typing import Optional, Tuple, Callable, Union, Dict, Any
+from tianshou.policy import BasePolicy
+from tianshou.data import Collector
+from typing import Optional, Tuple, Callable, Union, Any
 
 class NoDefaultProvided(object):
     pass
@@ -120,7 +122,7 @@ class VectorEnvRenderWrapper(gym.Wrapper):
     def normalize_obs(self, obs: np.ndarray) -> np.ndarray:
         return self.env.normalize_obs(obs)
 
-class AgentLoggerWrapper(BaseLogger):
+class LoggerWrapper(BaseLogger):
     def __init__(self, logger: BaseLogger, **kwargs):
         super().__init__(**kwargs)
         self.logger = logger
@@ -132,6 +134,10 @@ class AgentLoggerWrapper(BaseLogger):
         d = set(self.logger.__dir__())
         d.update(set(super().__dir__()))
         return d
+
+    @property
+    def unwrapped(self):
+        return self.logger
 
     def write(self, step_type: str, step: int, data: LOG_DATA_TYPE) -> None:
         return self.logger.write(step_type, step, data)
@@ -167,3 +173,49 @@ class AgentLoggerWrapper(BaseLogger):
             return epoch, env_step, gradient_step
         else:
             return (0, 0, 0)
+
+class PolicyWrapper(BasePolicy):
+    def __init__(self, policy: BasePolicy, **kwargs):
+        super().__init__(**kwargs)
+        self.__dict__["policy"] = policy
+
+    def __getattr__(self, name):
+        return getattr(self.policy, name)
+
+    def __setattr__(self, name, value):
+        if name in self.__dict__:
+            self.__dict__[name] = value
+        else:
+            setattr(self.policy, name, value)
+
+    def __dir__(self):
+        d = set(self.policy.__dir__())
+        d.update(set(super().__dir__()))
+        return d
+
+    @property
+    def unwrapped(self):
+        return self.policy
+
+class Wrapper(Collector):
+    def __init__(self, collector: Collector, **kwargs):
+        super().__init__(**kwargs)
+        self.__dict__["collector"] = collector
+
+    def __getattr__(self, name):
+        return getattr(self.collector, name)
+
+    def __setattr__(self, name, value):
+        if name in self.__dict__:
+            self.__dict__[name] = value
+        else:
+            setattr(self.collector, name, value)
+
+    def __dir__(self):
+        d = set(self.collector.__dir__())
+        d.update(set(super().__dir__()))
+        return d
+
+    @property
+    def unwrapped(self):
+        return self.collector

@@ -229,7 +229,8 @@ class Agent(StateDictObject):
             'test_callbacks',
             'save_callbacks',
             'save_checkpoint_callbacks',
-            'collector',
+            '_train_collector',
+            '_test_collector',
             'logger',
             'policy'
         ])
@@ -241,7 +242,7 @@ class Agent(StateDictObject):
         train_task, test_task = resolve_tasks(task, test_task, task_name)
 
         # setup the collectors
-        self.collector = self._setup_collector(
+        self._train_collector, self._test_collector = self._setup_collectors(
             train_collector, test_collector,
             train_task, test_task,
             train_env_class, test_env_class,
@@ -252,8 +253,8 @@ class Agent(StateDictObject):
         )
 
         # spaces
-        self.observation_space = self.collector.train_envs.observation_space[0]
-        self.action_space = self.collector.train_envs.action_space[0]
+        self.observation_space = self.train_envs.observation_space[0]
+        self.action_space = self.train_envs.action_space[0]
 
         if isinstance(self.observation_space, GymTuple):
             self.state_shape = (osp.shape or osp.n for osp in self.observation_space)
@@ -263,24 +264,24 @@ class Agent(StateDictObject):
         self.action_shape = self.action_space.shape or self.action_space.n
 
         try:
-            self.reward_threshold = self.collector.train_envs.spec[0].reward_threshold
+            self.reward_threshold = self.train_envs.spec[0].reward_threshold
         except AttributeError:
             self.reward_threshold = None
 
         # episode per test
         if episode_per_test is None:
-            self.episode_per_test = len(self.collector.test_envs)
+            self.episode_per_test = len(self.test_envs)
         else:
             self.episode_per_test = episode_per_test
 
         self._setup_policy(**policy_kwargs)
-        self.collector.train_collector.policy = self.policy
-        self.collector.test_collector.policy = self.policy
+        self.train_collector.policy = self.policy
+        self.test_collector.policy = self.policy
 
         self.logger = self._setup_logger(logger, task_name, method_name, seed)
 
         if self.step_per_collect is None:
-            self.step_per_collect = len(self.collector.train_envs)
+            self.step_per_collect = len(self.train_envs)
 
         if self.save_callbacks is None:
             self.save_callbacks = [SaveCallback(self.logger.log_path)]
@@ -296,6 +297,30 @@ class Agent(StateDictObject):
         other related attributes.
         """
         raise NotImplementedError()
+
+    @property
+    def train_collector(self):
+        return self._train_collector.unwrapped
+
+    @train_collector.setter
+    def train_collector(self, collector):
+        self._train_collector.unwrapped = collector
+
+    @property
+    def test_collector(self):
+        return self._test_collector.unwrapped
+
+    @test_collector.setter
+    def test_collector(self, collector):
+        self._test_collector.unwrapped = collector
+
+    @property
+    def train_envs(self):
+        return self._train_collector.unwrapped.env
+
+    @property
+    def test_envs(self):
+        return self._test_collector.unwrapped.env
 
     @property
     def env_step(self):
@@ -342,15 +367,15 @@ class Agent(StateDictObject):
         self._test_fn(self.logger.epoch, self.logger.env_step)
         self.policy.eval()
     
-        self.collector.test_collector.reset()
-        return self.collector.test_collector.collect(
+        self.test_collector.reset()
+        return self.test_collector.collect(
             n_episode=self.episode_per_test, render=render, **kwargs
         )
 
     def _setup_logger(self, logger, task_name, method_name, seed):
         return AgentLogger(logger, task_name, method_name, seed)
 
-    def _setup_collector(self,
+    def _setup_collectors(self,
         train_collector, test_collector,
         train_task, test_task,
         train_env_class, test_env_class,
@@ -359,15 +384,17 @@ class Agent(StateDictObject):
         replay_buffer,
         seed
     ):
-        return AgentCollector(
-            train_collector, test_collector,
-            train_task, test_task,
-            train_env_class, test_env_class,
-            train_envs, test_envs,
-            exploration_noise_train, exploration_noise_test,
-            replay_buffer,
-            seed
+        train_collector = AgentCollector(
+            train_collector, train_task, train_env_class, train_envs,
+            exploration_noise_train, replay_buffer, seed
         )
+
+        test_collector = AgentCollector(
+            test_collector, test_task, test_env_class, test_envs,
+            exploration_noise_test, None, seed
+        )
+
+        return train_collector, test_collector
 
     def _save_fn(self, policy):
         for callback in self.save_callbacks:
@@ -471,14 +498,14 @@ class OffPolicyAgent(Agent):
         self.batch_size = batch_size
 
         if prefill_steps is None:
-            self.prefill_steps = self.batch_size * len(self.collector.train_envs)
+            self.prefill_steps = self.batch_size * len(self.train_envs)
         else:
             self.prefill_steps = prefill_steps
 
     def _init(self):
         # prefill the replay buffer
         if self.prefill_steps:
-            self.collector.train_collector.collect(n_step=self.prefill_steps, random=True)
+            self.train_collector.collect(n_step=self.prefill_steps, random=True)
 
     def train(self, seed=None, **kwargs) -> Dict[str, Union[float, str]]:
         """Runs off-policy training. The keyword arguments (if any) are used
@@ -497,8 +524,8 @@ class OffPolicyAgent(Agent):
         """
         params = dict(
             policy=self.policy,
-            train_collector=self.collector.train_collector,
-            test_collector=self.collector.test_collector,
+            train_collector=self.train_collector,
+            test_collector=self.test_collector,
             max_epoch=self.max_epoch,
             step_per_epoch=self.step_per_epoch,
             step_per_collect=self.step_per_collect,
