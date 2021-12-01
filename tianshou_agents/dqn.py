@@ -1,18 +1,26 @@
-from .agent import OffPolicyAgent
+from .agent import OffPolicyAgent, Agent
 from .preset import AgentPreset
 from .schedule import Schedule, ConstSchedule, ExponentialSchedule
 from .callback import ScheduleCallback
 from .network import MLP
+from .components import PolicyComponent
 from tianshou.policy import DQNPolicy
 from typing import Any, Optional, Union, Callable, Dict
 from torch.optim import Optimizer
 from numbers import Number
 import torch
+import gym
 
-class DQNAgent(OffPolicyAgent):
+class DQNPolicyComponent(PolicyComponent):
     def __init__(
         self,
-        task_name: str,
+        agent: Agent,
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        reward_threshold: float = None,
+        device: Union[str, int, torch.device] = "cpu",
+        seed: int = None,
+        is_double: bool = True,
         eps_test: Union[float, Schedule, Callable[[int, int], Schedule]] = 0.01,
         eps_train: Union[float, Schedule, Callable[[int, int], Schedule]] =
             lambda max_epoch, step_per_epoch: ExponentialSchedule(
@@ -21,6 +29,7 @@ class DQNAgent(OffPolicyAgent):
         gamma: float = 0.99,
         target_update_freq: int = 0,
         estimation_step: int = 1,
+        reward_normalization: bool = False,
         qnetwork: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]]] = None,
         optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = None,
         **kwargs: Any
@@ -76,20 +85,20 @@ class DQNAgent(OffPolicyAgent):
         one of the provided presets.
 
         """
-        policy_kwargs = locals().copy()
-        del policy_kwargs['self']
-        del policy_kwargs['__class__']
-        del policy_kwargs['kwargs']
-        del policy_kwargs['task_name']
+        super().__init__(
+            agent=agent,
+            observation_space=observation_space,
+            action_space=action_space,
+            reward_threshold=reward_threshold,
+            device=device,
+            seed=seed,
+            **kwargs
+        )
 
-        super().__init__(task_name=task_name, method_name='dqn',
-                         **kwargs, **policy_kwargs)
+        # the state dict
+        self._state_objs.append('optim')
 
-    def _setup_policy(self,
-        is_double, eps_test, eps_train,
-        gamma, target_update_freq,
-        estimation_step, reward_normalization, qnetwork, optim
-    ):
+        # the network
         self.qnetwork = self.construct_rlnet(
             qnetwork, self.state_shape, self.action_shape
         )
@@ -97,8 +106,6 @@ class DQNAgent(OffPolicyAgent):
         self.optim = self.construct_optim(
             optim, self.qnetwork.parameters()
         )
-
-        self._state_objs.append('optim')
 
         # the algo
         self.policy = DQNPolicy(
@@ -114,18 +121,30 @@ class DQNAgent(OffPolicyAgent):
         elif isinstance(eps_train, Number):
             eps_train = ConstSchedule(eps_train)
         else:
-            eps_train = eps_train(self.max_epoch, self.step_per_epoch)
+            eps_train = eps_train(agent.max_epoch, agent.step_per_epoch)
 
-        self.train_callbacks.append(ScheduleCallback(self.policy.set_eps, eps_train))
+        agent.train_callbacks.append(ScheduleCallback(self.policy.set_eps, eps_train))
 
         if isinstance(eps_test, Schedule):
             eps_test = eps_test
         elif isinstance(eps_test, Number):
             eps_test = ConstSchedule(eps_test)
         else:
-            eps_test = eps_test(self.max_epoch, self.step_per_epoch)
+            eps_test = eps_test(agent.max_epoch, agent.step_per_epoch)
 
-        self.test_callbacks.append(ScheduleCallback(self.policy.set_eps, eps_test))
+        agent.test_callbacks.append(ScheduleCallback(self.policy.set_eps, eps_test))
+
+class DQNAgent(OffPolicyAgent):
+    def __init__(
+        self,
+        task_name: str,
+        **kwargs: Any
+    ):
+        super().__init__(
+            policy_component=DQNPolicyComponent,
+            task_name=task_name,
+            **kwargs
+        )
 
 # classic
 

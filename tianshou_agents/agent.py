@@ -1,33 +1,23 @@
 from tianshou.data import ReplayBuffer, Collector
 from tianshou.env import BaseVectorEnv
 from tianshou.utils import BaseLogger
-from tianshou.trainer import offpolicy_trainer
-from .callback import SaveCallback
-from .network import RLNetwork
 from .utils import StateDictObject
-from .components import AgentLogger, AgentCollector
-from torch.optim import Optimizer
+from .components import AgentLogger, CollectorComponent, PolicyComponent
+from .callback import SaveCallback, CheckpointCallback
 from functools import partial
+from tianshou.trainer import offpolicy_trainer
 from typing import List, Optional, Union, Callable, Type, Dict, Any
-from gym.spaces import Tuple as GymTuple
 from numbers import Number
 import numpy as np
 import torch
 import gym
 import abc
 
-def resolve_tasks(train_task, test_task, task_name):
-    if train_task is None:
-        train_task = partial(gym.make, task_name)
-
-    if test_task is None:
-        test_task = train_task
-
-    return train_task, test_task
-
 class Agent(StateDictObject):
     def __init__(
-        self, task_name: str, method_name: str,
+        self,
+        policy_component: PolicyComponent,
+        task_name: str,
         max_epoch: int = 10,
         train_envs: Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv] = 1,
         test_envs: Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv] = 1,
@@ -58,7 +48,6 @@ class Agent(StateDictObject):
         such as logging, callbacks, environment construction, etc.
 
         To subclass this, you need to implement at least the following:
-            * ``_setup_policy(self, **kwargs)``;
             * ``train(self, **kwargs)``;
             * add objects whose state_dict should be included in the agent's
               state_dict() [i.e. their state changes as the agent trains and
@@ -75,9 +64,6 @@ class Agent(StateDictObject):
                 environments are constructed using ``gym.make``. To override
                 this behaviour, supply a ``task`` argument: a callable that
                 constructs your ``gym`` environment.
-            method_name (str): The name of the RL method that the agent
-                implements. This is used e.g. to determine the default
-                logging path.
             max_epoch (int, optional): The maximum number of epochs for training. The
                 training process might be finished before reaching ``max_epoch``
                 if the stop criterion returns ``True``; this behaviour can be
@@ -231,15 +217,15 @@ class Agent(StateDictObject):
             'save_checkpoint_callbacks',
             '_train_collector',
             '_test_collector',
+            '_policy',
             'logger',
-            'policy'
         ])
 
         # seed
         self._apply_seed(seed)
 
         # resolve env constructors
-        train_task, test_task = resolve_tasks(task, test_task, task_name)
+        train_task, test_task = self._resolve_tasks(task, test_task, task_name)
 
         # setup the collectors
         self._train_collector, self._test_collector = self._setup_collectors(
@@ -249,24 +235,22 @@ class Agent(StateDictObject):
             train_envs, test_envs,
             exploration_noise_train, exploration_noise_test,
             replay_buffer,
+            device,
             seed
         )
 
+        # update step per collect if necessary
+        if self.step_per_collect is None:
+            self.step_per_collect = len(self.train_envs)
+
         # spaces
-        self.observation_space = self.train_envs.observation_space[0]
-        self.action_space = self.train_envs.action_space[0]
-
-        if isinstance(self.observation_space, GymTuple):
-            self.state_shape = (osp.shape or osp.n for osp in self.observation_space)
-        else:
-            self.state_shape = self.observation_space.shape or self.observation_space.n
-
-        self.action_shape = self.action_space.shape or self.action_space.n
+        observation_space = self.train_envs.observation_space[0]
+        action_space = self.train_envs.action_space[0]
 
         try:
-            self.reward_threshold = self.train_envs.spec[0].reward_threshold
+            reward_threshold = self.train_envs.spec[0].reward_threshold
         except AttributeError:
-            self.reward_threshold = None
+            reward_threshold = None
 
         # episode per test
         if episode_per_test is None:
@@ -274,29 +258,27 @@ class Agent(StateDictObject):
         else:
             self.episode_per_test = episode_per_test
 
-        self._setup_policy(**policy_kwargs)
-        self.train_collector.policy = self.policy
-        self.test_collector.policy = self.policy
+        self._policy = policy_component(
+            self, # agent; for callback lists, etc.
+            observation_space, action_space, reward_threshold,
+            device, seed,
+            **policy_kwargs
+        )
 
+        method_name = type(self._policy).__name__
         self.logger = self._setup_logger(logger, task_name, method_name, seed)
 
-        if self.step_per_collect is None:
-            self.step_per_collect = len(self.train_envs)
-
+        # setup the cross links among components
+        self._train_collector.setup(self.policy)
+        self._test_collector.setup(self.policy)
+        
         if self.save_callbacks is None:
             self.save_callbacks = [SaveCallback(self.logger.log_path)]
 
         if self.save_checkpoint_callbacks is None:
-            self.save_checkpoint_callbacks = []
-
-    @abc.abstractmethod
-    def _setup_policy(self, **kwargs):
-        """
-        Performs setup for the policy, creating the ``self.policy`` attribute
-        that is going to be passed to the trainer; optionally also exposes
-        other related attributes.
-        """
-        raise NotImplementedError()
+            self.save_checkpoint_callbacks = [
+                CheckpointCallback(self.logger.log_path, interval=max(int(self.max_epoch / 10), 1))
+            ]
 
     @property
     def train_collector(self):
@@ -338,6 +320,10 @@ class Agent(StateDictObject):
     def log_path(self):
         return self.logger.log_path
 
+    @property
+    def policy(self):
+        return self._policy.unwrapped
+
     def reset_progress_counters(self):
         self.logger.reset_progress_counters()
 
@@ -372,6 +358,20 @@ class Agent(StateDictObject):
             n_episode=self.episode_per_test, render=render, **kwargs
         )
 
+    def _apply_seed(self, seed):
+        if not seed is None:
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+
+    def _resolve_tasks(self, train_task, test_task, task_name):
+        if train_task is None:
+            train_task = partial(gym.make, task_name)
+
+        if test_task is None:
+            test_task = train_task
+
+        return train_task, test_task
+
     def _setup_logger(self, logger, task_name, method_name, seed):
         return AgentLogger(logger, task_name, method_name, seed)
 
@@ -382,16 +382,17 @@ class Agent(StateDictObject):
         train_envs, test_envs,
         exploration_noise_train, exploration_noise_test,
         replay_buffer,
+        device,
         seed
     ):
-        train_collector = AgentCollector(
+        train_collector = CollectorComponent(
             train_collector, train_task, train_env_class, train_envs,
-            exploration_noise_train, replay_buffer, seed
+            exploration_noise_train, replay_buffer, device, seed
         )
 
-        test_collector = AgentCollector(
+        test_collector = CollectorComponent(
             test_collector, test_task, test_env_class, test_envs,
-            exploration_noise_test, None, seed
+            exploration_noise_test, None, device, seed
         )
 
         return train_collector, test_collector
@@ -423,55 +424,6 @@ class Agent(StateDictObject):
     def _test_fn(self, epoch, env_step):
         for callback in self.test_callbacks:
             callback(epoch, env_step, self.logger.gradient_step, self)
-
-    def _apply_seed(self, seed):
-        if not seed is None:
-            np.random.seed(seed)
-            torch.manual_seed(seed)
-
-    def construct_rlnet(
-        self, module, state_shape, action_shape, **kwargs
-    ):
-        if module is None:
-            module = RLNetwork(
-                state_shape, action_shape,
-                device=self._device,
-                **kwargs
-            ).to(self._device)
-        elif isinstance(module, torch.nn.Module):
-            module = module.to(self._device)
-        elif isinstance(module, dict):
-            kwargs = kwargs.copy()
-            kwargs.update(module)
-            module = kwargs.pop("type", RLNetwork)
-            module = module(
-                state_shape, action_shape,
-                device=self._device,
-                **kwargs
-            ).to(self._device)
-
-        else:
-            module = module(
-                state_shape, action_shape,
-                device=self._device,
-                **kwargs
-            ).to(self._device)
-
-        return module
-
-    def construct_optim(self, optim, model_params):
-        if optim is None:
-            optim = torch.optim.Adam(model_params)
-        elif isinstance(optim, Optimizer):
-            pass
-        elif isinstance(optim, dict):
-            kwargs = optim.copy()
-            optim = kwargs.pop("type", torch.optim.Adam)
-            optim = optim(model_params, **kwargs)
-        else:
-            optim = optim(model_params)
-
-        return optim
 
 class OffPolicyAgent(Agent):
     def __init__(self,

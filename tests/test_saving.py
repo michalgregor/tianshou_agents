@@ -53,7 +53,7 @@ class TestAgentCheckpointMixin:
             train_callbacks=[DummyStatefulCallback(11)]
         )
 
-        state_dict = torch.load(os.path.join(log_path, "best_agent.pth"))
+        state_dict = torch.load(os.path.join(log_path, "last_agent.pth"))
         agent.load_state_dict(state_dict)
 
         self.assertEqual(agent.epoch, epoch)

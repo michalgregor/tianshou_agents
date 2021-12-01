@@ -1,6 +1,7 @@
-from .agent import OffPolicyAgent
+from .agent import OffPolicyAgent, Agent
 from .preset import AgentPreset
 from .network import MLP
+from .components import PolicyComponent
 from tianshou.policy import SACPolicy
 from tianshou.exploration import BaseNoise
 from tianshou.utils.net.continuous import ActorProb, Critic
@@ -8,11 +9,17 @@ from typing import Any, Optional, Union, Callable, Dict
 from torch.optim import Optimizer
 import numpy as np
 import torch
+import gym
 
-class SACAgent(OffPolicyAgent):
+class SACPolicyComponent(PolicyComponent):
     def __init__(
         self,
-        task_name: str,
+        agent: Agent,
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        reward_threshold: float = None,
+        device: Union[str, int, torch.device] = "cpu",
+        seed: int = None,
         actor: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]]] = None,
         critic1: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]]] = None,
         critic2: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]]] = None,
@@ -139,31 +146,23 @@ class SACAgent(OffPolicyAgent):
         one of the provided presets.
 
         """
-        policy_kwargs = locals().copy()
-        del policy_kwargs['self']
-        del policy_kwargs['__class__']
-        del policy_kwargs['kwargs']
-        del policy_kwargs['task_name']
+        super().__init__(
+            agent=agent,
+            observation_space=observation_space,
+            action_space=action_space,
+            reward_threshold=reward_threshold,
+            device=device,
+            seed=seed,
+            **kwargs
+        )
 
-        super().__init__(task_name=task_name, method_name='sac',
-                         **kwargs, **policy_kwargs)
+        # the sate dict
+        self._state_objs.extend([
+            'actor_optim',
+            'critic1_optim',
+            'critic2_optim'
+        ])
 
-    def _setup_policy(self,
-        actor,
-        critic1,
-        critic2,
-        gamma, tau,
-        auto_alpha, alpha,
-        target_entropy,
-        exploration_noise,
-        reward_normalization,
-        estimation_step,
-        deterministic_eval,
-        actor_optim,
-        critic1_optim,
-        critic2_optim,
-        alpha_optim,
-    ):
         max_action = np.max(self.action_space.high)
 
         # actor
@@ -180,8 +179,6 @@ class SACAgent(OffPolicyAgent):
             actor_optim, self.actor.parameters()
         )
 
-        self._state_objs.append('actor_optim')
-
         # critic 1
         self.critic1_net = self.construct_rlnet(
             critic1, self.state_shape,
@@ -195,8 +192,6 @@ class SACAgent(OffPolicyAgent):
             critic1_optim, self.critic1.parameters()
         )
 
-        self._state_objs.append('critic1_optim')
-
         # critic 2
         self.critic2_net = self.construct_rlnet(
             critic2, self.state_shape,
@@ -209,8 +204,6 @@ class SACAgent(OffPolicyAgent):
         self.critic2_optim = self.construct_optim(
             critic2_optim, self.critic2.parameters()
         )
-
-        self._state_objs.append('critic2_optim')
 
         # alpha tuning
         if auto_alpha or not target_entropy is None:
@@ -233,6 +226,18 @@ class SACAgent(OffPolicyAgent):
             action_space=self.action_space,
             estimation_step=estimation_step,
             deterministic_eval=deterministic_eval
+        )
+
+class SACAgent(OffPolicyAgent):
+    def __init__(
+        self,
+        task_name: str,
+        **kwargs: Any
+    ):
+        super().__init__(
+            policy_component=SACPolicyComponent,
+            task_name=task_name,
+            **kwargs
         )
 
 # the simple preset
