@@ -13,6 +13,13 @@ import torch
 import gym
 import abc
 
+# for offpolicy_trainer
+from collections import defaultdict
+from tianshou.trainer import gather_info, test_episode
+from tianshou.utils import BaseLogger, LazyLogger, MovAvg, tqdm_config
+import tqdm
+import time
+
 class Agent(StateDictObject):
     def __init__(
         self,
@@ -459,6 +466,127 @@ class OffPolicyAgent(Agent):
         if self.prefill_steps:
             self.train_collector.collect(n_step=self.prefill_steps, random=True)
 
+    def _offpolicy_trainer(
+        self,
+        policy,
+        train_collector,
+        test_collector,
+        max_epoch,
+        step_per_epoch,
+        step_per_collect,
+        episode_per_test,
+        batch_size,
+        update_per_step = 1,
+        train_fn = None,
+        test_fn = None,
+        stop_fn = None,
+        save_fn = None,
+        save_checkpoint_fn = None,
+        resume_from_log = False,
+        reward_metric = None,
+        logger = LazyLogger(),
+        verbose = True,
+        test_in_train = False
+    ):
+        start_epoch, env_step, gradient_step = 0, 0, 0
+        if resume_from_log:
+            start_epoch, env_step, gradient_step = logger.restore_data()
+
+        last_rew, last_len = 0.0, 0
+        stat: Dict[str, MovAvg] = defaultdict(MovAvg)
+        start_time = time.time()
+        train_collector.reset_stat()
+        test_collector.reset_stat()
+        test_in_train = test_in_train and train_collector.policy == policy
+        test_result = test_episode(
+            policy, test_collector, test_fn, start_epoch, episode_per_test, logger,
+            env_step, reward_metric
+        )
+        best_epoch = start_epoch
+        best_reward, best_reward_std = test_result["rew"], test_result["rew_std"]
+        if save_fn:
+            save_fn(policy)
+
+        for epoch in range(1 + start_epoch, 1 + max_epoch):
+            # train
+            policy.train()
+            with tqdm.tqdm(
+                total=step_per_epoch, desc=f"Epoch #{epoch}", **tqdm_config
+            ) as t:
+                while t.n < t.total:
+                    if train_fn:
+                        train_fn(epoch, env_step)
+                    result = train_collector.collect(n_step=step_per_collect)
+                    if result["n/ep"] > 0 and reward_metric:
+                        rew = reward_metric(result["rews"])
+                        result.update(rews=rew, rew=rew.mean(), rew_std=rew.std())
+                    env_step += int(result["n/st"])
+                    t.update(result["n/st"])
+                    logger.log_train_data(result, env_step)
+                    last_rew = result['rew'] if 'rew' in result else last_rew
+                    last_len = result['len'] if 'len' in result else last_len
+                    data = {
+                        "env_step": str(env_step),
+                        "rew": f"{last_rew:.2f}",
+                        "len": str(int(last_len)),
+                        "n/ep": str(int(result["n/ep"])),
+                        "n/st": str(int(result["n/st"])),
+                    }
+                    if result["n/ep"] > 0:
+                        if test_in_train and stop_fn and stop_fn(result["rew"]):
+                            test_result = test_episode(
+                                policy, test_collector, test_fn, epoch, episode_per_test,
+                                logger, env_step
+                            )
+                            if stop_fn(test_result["rew"]):
+                                if save_fn:
+                                    save_fn(policy)
+                                logger.save_data(
+                                    epoch, env_step, gradient_step, save_checkpoint_fn
+                                )
+                                t.set_postfix(**data)
+                                return gather_info(
+                                    start_time, train_collector, test_collector,
+                                    test_result["rew"], test_result["rew_std"]
+                                )
+                            else:
+                                policy.train()
+                    for _ in range(round(update_per_step * result["n/st"])):
+                        gradient_step += 1
+                        losses = policy.update(batch_size, train_collector.buffer)
+                        for k in losses.keys():
+                            stat[k].add(losses[k])
+                            losses[k] = stat[k].get()
+                            data[k] = f"{losses[k]:.3f}"
+                        logger.log_update_data(losses, gradient_step)
+                        t.set_postfix(**data)
+                if t.n <= t.total:
+                    t.update()
+            # test
+            test_result = test_episode(
+                policy, test_collector, test_fn, epoch, episode_per_test, logger, env_step,
+                reward_metric
+            )
+            rew, rew_std = test_result["rew"], test_result["rew_std"]
+            if best_epoch < 0 or best_reward < rew:
+                best_epoch, best_reward, best_reward_std = epoch, rew, rew_std
+                if save_fn:
+                    save_fn(policy)
+            logger.save_data(epoch, env_step, gradient_step, save_checkpoint_fn)
+            if verbose:
+                print(
+                    f"Epoch #{epoch}: test_reward: {rew:.6f} ± {rew_std:.6f}, best_rew"
+                    f"ard: {best_reward:.6f} ± {best_reward_std:.6f} in #{best_epoch}"
+                )
+            if stop_fn and stop_fn(best_reward):
+                break
+        return gather_info(
+            start_time, train_collector, test_collector, best_reward, best_reward_std
+        )
+
+
+
+
     def train(self, seed=None, **kwargs) -> Dict[str, Union[float, str]]:
         """Runs off-policy training. The keyword arguments (if any) are used
         to update the arguments passed to ``offpolicy_trainer``. Most notably,
@@ -506,4 +634,4 @@ class OffPolicyAgent(Agent):
         if self.logger.env_step is None: self._init()
 
         self.policy.train()
-        return offpolicy_trainer(**params)
+        return self._offpolicy_trainer(**params)
