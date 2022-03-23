@@ -3,5 +3,5 @@
 VERSION = "0.1"
 
 from .agent import Agent, OffPolicyAgent
-from .callback import Callback
-from .network import RLNetwork
+from .callbacks import Callback
+from .networks import RLNetwork

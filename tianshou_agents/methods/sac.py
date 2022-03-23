@@ -1,7 +1,7 @@
-from .agent import OffPolicyAgent, Agent
-from .preset import AgentPreset
-from .network import MLP
-from .components import PolicyComponent
+from ..agent import OffPolicyAgent, Agent
+from ..components.preset import AgentPreset
+from ..networks import MLP
+from ..components.components import PolicyComponent
 from tianshou.policy import SACPolicy
 from tianshou.exploration import BaseNoise
 from tianshou.utils.net.continuous import ActorProb, Critic

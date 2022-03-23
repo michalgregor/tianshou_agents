@@ -2,7 +2,7 @@ import os
 import abc
 from re import L
 import torch
-from .utils import StateDictObject
+from .components.utils import StateDictObject
 
 class Callback(StateDictObject):
     @abc.abstractmethod

@@ -1,7 +1,7 @@
 import torch
 import unittest
-from tianshou_agents.sac import sac_simple
-from tianshou_agents.callback import Callback
+from tianshou_agents.methods.sac import sac_simple
+from tianshou_agents.callbacks import Callback
 
 # suppress tqdm output
 import os

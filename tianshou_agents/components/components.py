@@ -1,4 +1,4 @@
-from .network import RLNetwork
+from ..networks import RLNetwork
 from .utils import StateDictObject, LoggerWrapper
 from torch.optim import Optimizer
 from tianshou.policy import RandomPolicy

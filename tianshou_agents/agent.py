@@ -1,11 +1,10 @@
 from tianshou.data import ReplayBuffer, Collector
 from tianshou.env import BaseVectorEnv
 from tianshou.utils import BaseLogger
-from .utils import StateDictObject
-from .components import AgentLogger, CollectorComponent, PolicyComponent
-from .callback import SaveCallback, CheckpointCallback
+from .components.utils import StateDictObject
+from .components.components import AgentLogger, CollectorComponent, PolicyComponent
+from .callbacks import SaveCallback, CheckpointCallback
 from functools import partial
-from tianshou.trainer import offpolicy_trainer
 from typing import List, Optional, Union, Callable, Type, Dict, Any
 from numbers import Number
 import numpy as np
@@ -583,9 +582,6 @@ class OffPolicyAgent(Agent):
         return gather_info(
             start_time, train_collector, test_collector, best_reward, best_reward_std
         )
-
-
-
 
     def train(self, seed=None, **kwargs) -> Dict[str, Union[float, str]]:
         """Runs off-policy training. The keyword arguments (if any) are used

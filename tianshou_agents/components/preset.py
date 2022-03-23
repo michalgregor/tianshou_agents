@@ -1,4 +1,4 @@
-from .agent import Agent
+from ..agent import Agent
 from typing import Type
 
 class AgentPreset:

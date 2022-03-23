@@ -1,9 +1,9 @@
-from .agent import OffPolicyAgent, Agent
-from .preset import AgentPreset
-from .schedule import Schedule, ConstSchedule, ExponentialSchedule
-from .callback import ScheduleCallback
-from .network import MLP
-from .components import PolicyComponent
+from ..agent import OffPolicyAgent, Agent
+from ..components.preset import AgentPreset
+from ..schedules import Schedule, ConstSchedule, ExponentialSchedule
+from ..callbacks import ScheduleCallback
+from ..networks import MLP
+from ..components.components import PolicyComponent
 from tianshou.policy import DQNPolicy
 from typing import Any, Optional, Union, Callable, Dict
 from torch.optim import Optimizer

@@ -1,5 +1,5 @@
 import unittest
-from tianshou_agents.network import RLNetwork
+from tianshou_agents.networks import RLNetwork
 from numbers import Number
 from torch import nn
 import torch

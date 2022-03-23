@@ -1,8 +1,8 @@
 import unittest
 
 from tianshou.env.venvs import DummyVectorEnv
-from tianshou_agents.dqn import dqn_classic
-from tianshou_agents.sac import sac_classic
+from tianshou_agents.methods.dqn import dqn_classic
+from tianshou_agents.methods.sac import sac_classic
 
 # suppress tqdm output
 import os
