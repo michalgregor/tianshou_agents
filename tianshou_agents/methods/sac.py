@@ -1,8 +1,9 @@
-from ..agent import OffPolicyAgent, Agent
+from ..agent import Agent, OffPolicyAgent
 from ..components.preset import AgentPreset
 from ..networks import MLP
-from ..components.components import PolicyComponent
-from tianshou.policy import SACPolicy
+from ..components import PolicyComponent
+from ..utils import derive_conf
+from tianshou.policy import SACPolicy, BasePolicy
 from tianshou.exploration import BaseNoise
 from tianshou.utils.net.continuous import ActorProb, Critic
 from typing import Any, Optional, Union, Callable, Dict
@@ -36,7 +37,8 @@ class SACPolicyComponent(PolicyComponent):
         critic1_optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = None,
         critic2_optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = None,
         alpha_optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = None,
-        **kwargs
+        make_policy: Optional[Callable[..., BasePolicy]] = SACPolicy,
+        **policy_kwargs
     ):
         """Implementation of Soft Actor-Critic. arXiv:1812.05905.
 
@@ -140,6 +142,12 @@ class SACPolicyComponent(PolicyComponent):
                 Note that this optimizer typically needs to have a learning
                 rate lower than the other optimizers.
 
+            make_policy (Callable[..., BasePolicy], optional):
+                A callable that constructs the policy. Defaults to DQNPolicy;
+                the arguments are the same as the arguments of DQNPolicy.
+                The make_policy argument can be used to add custom wrappers
+                to the base policy, etc.
+
         For additional arguments that need to (or can optionally) be supplied
         as keyword arguments, see ``tianshou_agents.Agent`` and
         ``tianshou_agents.OffPolicyAgent``, or better still use and modify
@@ -153,7 +161,7 @@ class SACPolicyComponent(PolicyComponent):
             reward_threshold=reward_threshold,
             device=device,
             seed=seed,
-            **kwargs
+            make_policy=make_policy
         )
 
         # the sate dict
@@ -216,7 +224,7 @@ class SACPolicyComponent(PolicyComponent):
             )
             alpha = (target_entropy, log_alpha, alpha_optim)
 
-        self.policy = SACPolicy(
+        self.policy = self.make_policy(
             self.actor, self.actor_optim,
             self.critic1, self.critic1_optim,
             self.critic2, self.critic2_optim,
@@ -225,24 +233,16 @@ class SACPolicyComponent(PolicyComponent):
             exploration_noise=exploration_noise,
             action_space=self.action_space,
             estimation_step=estimation_step,
-            deterministic_eval=deterministic_eval
+            deterministic_eval=deterministic_eval,
+            **policy_kwargs
         )
 
-class SACAgent(OffPolicyAgent):
-    def __init__(
-        self,
-        task_name: str,
-        **kwargs: Any
-    ):
-        super().__init__(
-            policy_component=SACPolicyComponent,
-            task_name=task_name,
-            **kwargs
-        )
+# base config
 
-# the simple preset
-
-sac_simple_hyperparameters = {
+sac_base_config = {
+    # agent
+    'policy_component': SACPolicyComponent,
+    'make_policy': SACPolicy,
     # sac
     'exploration_noise': None,
     'gamma': 0.99,
@@ -264,55 +264,7 @@ sac_simple_hyperparameters = {
     'prefill_steps': None,
     # general
     'train_envs': 1,
-    'test_envs': 5,
-    'train_env_class': None,
-    'test_env_class': None,
-    'episode_per_test': 10,
-    'seed': None,
-    'max_epoch': 10,
-    'step_per_epoch': 80000,
-    'step_per_collect': None,
-    'update_per_collect': 1.,
-    'batch_size': 128,
-    'logger': 'log',
-    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'train_callbacks': None,
-    'test_callbacks': None,
-    'train_collector': None,
-    'test_collector': None,
-    'exploration_noise_train': True,
-    'exploration_noise_test': True,
-    'task': None,
-    'stop_criterion': False
-}
-
-sac_simple = AgentPreset(SACAgent, sac_simple_hyperparameters)
-
-# the classic preset
-
-sac_classic_hyperparameters = {
-    # sac
-    'exploration_noise': None,
-    'gamma': 0.99,
-    'tau': 0.005,
-    'auto_alpha': True,
-    'alpha': 0.2,
-    'reward_normalization': False,
-    'estimation_step': 1,
-    'deterministic_eval': True,
-    'actor': dict(model=MLP, hidden_sizes=[128, 128]),
-    'actor_optim': dict(lr=3e-4),
-    'critic1': dict(model=MLP, hidden_sizes=[128, 128]),
-    'critic1_optim': dict(lr=3e-4),
-    'critic2': dict(model=MLP, hidden_sizes=[128, 128]),
-    'critic2_optim': dict(lr=3e-4),
-    'alpha_optim': dict(lr=3e-4),
-    # replay buffer
-    'replay_buffer': 1000000,
-    'prefill_steps': None,
-    # general
-    'train_envs': 16,
-    'test_envs': 100,
+    'test_envs': 1,
     'train_env_class': None,
     'test_env_class': None,
     'episode_per_test': None,
@@ -334,52 +286,45 @@ sac_classic_hyperparameters = {
     'stop_criterion': False
 }
 
-sac_classic = AgentPreset(SACAgent, sac_classic_hyperparameters)
+sac_default = AgentPreset(OffPolicyAgent, sac_base_config)
 
-# the pybullet preset
+# classic
 
-sac_pybullet_hyperparameters = {
+sac_classic_hyperparameters = derive_conf(sac_base_config, {
+    # general
+    'train_envs': 16,
+    'test_envs': 100
+})
+
+sac_classic = AgentPreset(OffPolicyAgent, sac_classic_hyperparameters)
+
+# simple
+
+sac_simple_hyperparameters = derive_conf(sac_base_config, {
+    # general
+    'test_envs': 5,
+    'episode_per_test': 10
+})
+
+sac_simple = AgentPreset(OffPolicyAgent, sac_simple_hyperparameters)
+
+# pybullet
+
+sac_pybullet_hyperparameters = derive_conf(sac_base_config, {
     # sac
-    'exploration_noise': None,
-    'gamma': 0.99,
-    'tau': 0.005,
-    'auto_alpha': True,
-    'alpha': 0.2,
-    'reward_normalization': False,
-    'estimation_step': 1,
-    'deterministic_eval': True,
     'actor': dict(model=MLP, hidden_sizes=[256, 256]),
     'actor_optim': dict(lr=1e-3),
     'critic1': dict(model=MLP, hidden_sizes=[256, 256]),
     'critic1_optim': dict(lr=1e-3),
     'critic2': dict(model=MLP, hidden_sizes=[256, 256]),
     'critic2_optim': dict(lr=1e-3),
-    'alpha_optim': dict(lr=3e-4),
     # replay buffer
-    'replay_buffer': 1000000,
     'prefill_steps': 10000,
     # general
-    'train_envs': 1,
     'test_envs': 10,
-    'train_env_class': None,
-    'test_env_class': None,
-    'episode_per_test': None,
-    'seed': None,
     'max_epoch': 200,
     'step_per_epoch': 5000,
-    'step_per_collect': None,
-    'update_per_collect': 1.,
-    'batch_size': 256,
-    'logger': 'log',
-    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-    'train_callbacks': None,
-    'test_callbacks': None,
-    'train_collector': None,
-    'test_collector': None,
-    'exploration_noise_train': True,
-    'exploration_noise_test': True,
-    'task': None,
-    'stop_criterion': False
-}
+    'batch_size': 256
+})
 
-sac_pybullet = AgentPreset(SACAgent, sac_pybullet_hyperparameters)
+sac_pybullet = AgentPreset(OffPolicyAgent, sac_pybullet_hyperparameters)

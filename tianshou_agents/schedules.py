@@ -1,6 +1,6 @@
 import abc
 import numpy as np
-from .components.utils import StateDictObject
+from .utils import StateDictObject
 
 class Schedule(StateDictObject):
     def __init__(self, method='step'):

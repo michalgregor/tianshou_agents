@@ -1,10 +1,9 @@
-from ..agent import Agent
 from typing import Type
 
 class AgentPreset:
     def __init__(
         self,
-        agent_class: Type[Agent],
+        agent_class: Type["Agent"],
         default_params: dict
     ):
         """The class used to construct presets.

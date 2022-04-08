@@ -1,14 +1,60 @@
-from typing import Optional, Callable, Dict, Any, Union, List, Tuple
-from tianshou.policy import BasePolicy
+from ..utils import StateDictObject
+from .env import setup_envs
 from tianshou.data import (
-    Batch, ReplayBuffer, VectorReplayBuffer,
-    CachedReplayBuffer, ReplayBufferManager,
-    to_numpy
+    Collector, VectorReplayBuffer, ReplayBuffer, CachedReplayBuffer,
+    ReplayBufferManager, Batch, to_numpy
 )
-
+from tianshou.policy import BasePolicy, RandomPolicy
+from numbers import Number
+from typing import Optional, Callable, Dict, Any, Union, List, Tuple
 import numpy as np
 import warnings
 import torch
+
+class CollectorComponent(StateDictObject):
+    def __init__(self,
+        collector, task, env_class,
+        envs, exploration_noise,
+        replay_buffer = None,
+        device=None, seed: int = None,
+        **kwargs
+    ):  
+        super().__init__(**kwargs)
+        self._state_objs.extend([
+            'collector.buffer'
+        ])
+
+        if isinstance(collector, Collector):
+            self.collector = collector
+        else:
+            envs = setup_envs(task, env_class, envs)
+            placeholder_policy = RandomPolicy(envs.action_space[0])
+
+            if collector is None: collector = Collector
+            replay_buffer = self._create_replay_buffer(replay_buffer, envs)
+
+            self.collector = collector(
+                policy=placeholder_policy,
+                env=envs,
+                buffer=replay_buffer,
+                exploration_noise=exploration_noise
+            )
+
+        if not seed is None:
+            self.collector.env.seed(seed)
+
+    def setup(self, policy):
+        self.collector.policy = policy
+
+    def _create_replay_buffer(self, replay_buffer, envs):
+        if replay_buffer is None:
+            return None
+        elif isinstance(replay_buffer, Number):
+            return VectorReplayBuffer(replay_buffer, len(envs))
+        elif isinstance(replay_buffer, ReplayBuffer):
+            return replay_buffer
+        else:
+            return replay_buffer(len(envs))
 
 class PassiveCollector:
     def __init__(

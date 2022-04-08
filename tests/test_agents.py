@@ -23,7 +23,8 @@ class TestAgentMixin:
 
     def testAgentTrainAndTest(self):
         agent = self.AgentPreset(
-            self.TaskName, task=self.Task, max_epoch=2,
+            self.TaskName,
+            task=self.Task, max_epoch=2,
             step_per_epoch=5,
             train_envs=5,
             test_envs=5,

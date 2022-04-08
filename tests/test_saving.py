@@ -31,7 +31,8 @@ class TestAgentCheckpointMixin:
 
     def testAgentTrainAndLoad(self):
         agent = self.AgentPreset(
-            self.TaskName, task=self.Task,
+            self.TaskName,
+            task=self.Task,
             max_epoch=2,
             step_per_epoch=20,
             train_envs=1,

@@ -5,7 +5,7 @@ from torch import nn
 import numpy as np
 import torch
 
-DataType = Union[np.ndarray, torch.Tensor]
+RLNetworkDataType = Union[np.ndarray, torch.Tensor]
 
 class RLNetwork(nn.Module):
     def __init__(
@@ -126,7 +126,7 @@ class RLNetwork(nn.Module):
 
     def forward(
         self,
-        args: Union[Tuple[DataType], List[DataType], DataType], 
+        args: Union[Tuple[RLNetworkDataType], List[RLNetworkDataType], RLNetworkDataType], 
         state: Any = None,
         info: Dict[str, Any] = {},
     ) -> Tuple[torch.Tensor, Any]:
