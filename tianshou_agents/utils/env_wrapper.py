@@ -25,7 +25,7 @@ class VectorEnvRenderWrapper(gym.Wrapper):
     def seed(
         self, seed: Optional[Union[int, List[int]]] = None
     ) -> List[Optional[List[int]]]:
-        return self.env.seed(seed)
+        return self.env.seed(seed=seed)
 
     def render(self, **kwargs: Any) -> List[Any]:
         """Render all of the environments."""

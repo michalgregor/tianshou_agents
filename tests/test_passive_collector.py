@@ -72,5 +72,5 @@ class TestPassiveCollector(unittest.TestCase):
                 obs[envs_done_local] = agent.train_envs.reset_env(envs_done_global)
 
         len_buffer = len(passive_collector.buffer)
-        self.assertEquals(len_buffer, 15)
+        self.assertEqual(len_buffer, 15)
     

@@ -10,7 +10,7 @@ RLNetworkDataType = Union[np.ndarray, torch.Tensor]
 class RLNetwork(nn.Module):
     def __init__(
         self,
-        state_shape: Union[int, Tuple[int], List[Tuple[int]]],
+        observation_shape: Union[int, Tuple[int], List[Tuple[int]]],
         action_shape: Union[int, Sequence[int]] = 0,
         model: Optional[Union[nn.Module, Callable[..., nn.Module]]] = None,
         device: Union[str, int, torch.device] = "cpu",
@@ -29,12 +29,12 @@ class RLNetwork(nn.Module):
         self.stateful = stateful
         self.flatten = flatten
 
-        self._verify_state_shape(state_shape)
+        self._verify_observation_shape(observation_shape)
 
         if self.flatten:
-            input_dim = int(np.prod(state_shape))
+            input_dim = int(np.prod(observation_shape))
         else:
-            input_dim = state_shape
+            input_dim = observation_shape
 
         action_dim = int(np.prod(action_shape)) * num_atoms       
         
@@ -95,11 +95,11 @@ class RLNetwork(nn.Module):
             self.Q, self.V = MLP(**q_kwargs), MLP(**v_kwargs)
             self.output_dim = self.Q.output_dim
 
-    def _verify_state_shape(self, state_shape):
+    def _verify_observation_shape(self, observation_shape):
         wrong = False
 
-        if isinstance(state_shape, list):
-            for sh in state_shape:
+        if isinstance(observation_shape, list):
+            for sh in observation_shape:
                 if isinstance(sh, tuple):
                     for s in sh:
                         if not isinstance(s, Number):
@@ -111,10 +111,10 @@ class RLNetwork(nn.Module):
                     pass
                 else:
                     wrong = True
-        elif isinstance(state_shape, Number):
+        elif isinstance(observation_shape, Number):
             pass
-        elif isinstance(state_shape, tuple):
-            for s in state_shape:
+        elif isinstance(observation_shape, tuple):
+            for s in observation_shape:
                 if not isinstance(s, Number):
                     wrong = True
                     break
@@ -122,7 +122,7 @@ class RLNetwork(nn.Module):
             wrong = True
 
         if wrong:
-            raise TypeError(f"Expected ``state_shape`` to be a number, a tuple or a list of tuples, got '{state_shape}'.")
+            raise TypeError(f"Expected ``observation_shape`` to be a number, a tuple or a list of tuples, got '{observation_shape}'.")
 
     def forward(
         self,

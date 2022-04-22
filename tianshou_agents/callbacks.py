@@ -3,6 +3,9 @@ import abc
 from re import L
 import torch
 from .utils import StateDictObject
+from typing import Callable
+
+CallbackType = Callable[[int, int, int, 'ComponentAgent'], None]
 
 class Callback(StateDictObject):
     @abc.abstractmethod
@@ -21,7 +24,7 @@ class ScheduleCallback(Callback):
         self.setter(val)
 
 class SaveCallback(Callback):
-    def __init__(self, log_path, fname="best_agent.pth"):
+    def __init__(self, log_path='saved_models', fname="best_agent.pth"):
         super().__init__()
         self.log_path = log_path
         self.fname = fname
@@ -31,7 +34,7 @@ class SaveCallback(Callback):
         torch.save(state_dict, os.path.join(self.log_path, self.fname))
 
 class CheckpointCallback(SaveCallback):
-    def __init__(self, log_path, fname="last_agent.pth", interval=1, method="epoch"):
+    def __init__(self, log_path='saved_models', fname="last_agent.pth", interval=1, method="epoch"):
         super().__init__(log_path, fname=fname)
         self.interval = interval
         self.method = method

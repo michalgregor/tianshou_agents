@@ -1,61 +1,132 @@
-from ..utils import StateDictObject
-from .env import setup_envs
+from .component import Component
+from .replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
+from .env import setup_envs, extract_shape
+from ..utils import construct_config_object
 from tianshou.data import (
     Collector, VectorReplayBuffer, ReplayBuffer, CachedReplayBuffer,
     ReplayBufferManager, Batch, to_numpy
 )
+from tianshou.env import BaseVectorEnv
 from tianshou.policy import BasePolicy, RandomPolicy
-from numbers import Number
-from typing import Optional, Callable, Dict, Any, Union, List, Tuple
+from functools import partial
+from typing import Optional, Callable, Dict, Any, Union, List, Tuple, Type
 import numpy as np
 import warnings
 import torch
+import gym
 
-class CollectorComponent(StateDictObject):
+class BaseCollectorComponent(Component):
+    """The base of collector components.
+
+    In order to subclass, implement a constructor that takes in the
+    required arguments and constructs the collector, assigning
+    it to self.collector.
+    """
+
+class CollectorComponent(BaseCollectorComponent):
     def __init__(self,
-        collector, task, env_class,
-        envs, exploration_noise,
-        replay_buffer = None,
-        device=None, seed: int = None,
+        agent: 'ComponentAgent',
+        device: Optional[Union[str, int, torch.device]] = None,
+        seed: Optional[int] = None,
+        component_replay_buffer: Optional[Union[
+            int,
+            ReplayBuffer,
+            BaseReplayBufferComponent,
+            Callable[..., BaseReplayBufferComponent],
+            Dict[str, Any]
+        ]] = None,
+        task: Optional[Callable[[], gym.Env]] = None,
+        task_name: Optional[str] = None,
+        env: Optional[Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv]] = None,
+        envs: Optional[Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv]] = None,
+        env_class: Optional[Type[BaseVectorEnv]] = None,
+        policy: Optional[BasePolicy] = None,
+        config_arg: Optional[Union[Collector, int]] = None,
+        component_class: Any = None,
         **kwargs
-    ):  
-        super().__init__(**kwargs)
+    ):
+        super().__init__()
+        self.task_name = task_name
+
         self._state_objs.extend([
             'collector.buffer'
         ])
 
-        if isinstance(collector, Collector):
-            self.collector = collector
+        # envs is an alias of env for backward compatibility
+        if env is None: env = envs
+
+        # setup the default collector class
+        if component_class is None:
+            component_class = Collector
+
+        # if there is a pre-constructed collector, use it
+        if isinstance(config_arg, Collector):
+            self.collector = config_arg
         else:
-            envs = setup_envs(task, env_class, envs)
-            placeholder_policy = RandomPolicy(envs.action_space[0])
+            if task is None:
+                assert not task_name is None
+                task = partial(gym.make, task_name)
 
-            if collector is None: collector = Collector
-            replay_buffer = self._create_replay_buffer(replay_buffer, envs)
+            # construct the enviroments if necessary
+            env = setup_envs(task, env_class, env)
 
-            self.collector = collector(
-                policy=placeholder_policy,
-                env=envs,
-                buffer=replay_buffer,
-                exploration_noise=exploration_noise
+            if policy is None:
+                policy = RandomPolicy(env.action_space[0])
+
+            # constructs the replay buffer component if necessary
+            if agent.component_replay_buffer is None:
+                agent.component_replay_buffer = construct_config_object(
+                    component_replay_buffer, ReplayBufferComponent,
+                    default_obj_constructor=ReplayBufferComponent,
+                    obj_kwargs=dict(
+                        agent=agent,
+                        device=device,
+                        seed=seed,
+                        num_envs=len(env)
+                    )
+                )
+
+            # construct the actual collector
+            self.collector = component_class(
+                policy=policy,
+                env=env,
+                # note: buffer is None for the test collector
+                buffer=agent.component_replay_buffer.replay_buffer
+                    if not component_replay_buffer is None else None,
+                **kwargs
             )
 
-        if not seed is None:
-            self.collector.env.seed(seed)
+        if (
+            not seed is None and
+            not self.collector is None and
+            not self.collector.env is None
+        ):
+            self.collector.env.seed(seed=seed)
 
-    def setup(self, policy):
-        self.collector.policy = policy
+    def setup(
+        self,
+        agent: 'ComponentAgent',
+        device: Optional[Union[str, int, torch.device]] = None,
+        seed: Optional[int] = None
+    ):
+        self.collector.policy = agent.policy
 
-    def _create_replay_buffer(self, replay_buffer, envs):
-        if replay_buffer is None:
-            return None
-        elif isinstance(replay_buffer, Number):
-            return VectorReplayBuffer(replay_buffer, len(envs))
-        elif isinstance(replay_buffer, ReplayBuffer):
-            return replay_buffer
-        else:
-            return replay_buffer(len(envs))
+    @property
+    def observation_space(self):
+        return None if self.collector.env is None else self.collector.env.observation_space[0]
 
+    @property
+    def action_space(self):
+        return None if self.collector.env is None else self.collector.env.action_space[0]
+
+    @property
+    def observation_shape(self):
+        return extract_shape(self.observation_space)
+
+    @property
+    def action_shape(self):
+        return extract_shape(self.action_space)
+        
 class PassiveCollector:
     def __init__(
         self,

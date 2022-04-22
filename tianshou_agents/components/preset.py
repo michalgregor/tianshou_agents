@@ -1,17 +1,18 @@
 from typing import Type
+from ..agent import ComponentAgent, Agent
 
 class AgentPreset:
     def __init__(
         self,
-        agent_class: Type["Agent"],
-        default_params: dict
+        default_params: dict,
+        agent_class: Type[ComponentAgent] = Agent,
     ):
         """The class used to construct presets.
 
         Args:
-            agent_class (Type[Agent]): The class of the agent.
             default_params ([type]): The default parameters associated with
                 this preset.
+            agent_class (Type[ComponentAgent]): The class of the agent.
 
         To see more info about the parameters, consult the docstring of
         ``self.agent_class``.

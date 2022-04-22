@@ -1,103 +1,65 @@
-from ..utils import StateDictObject
-from torch.optim import Optimizer
-from tianshou.policy import BasePolicy
-from typing import Optional, Union, Callable
-from gym.spaces import Tuple as GymTuple
+from ..utils import construct_config_object
+from .component import Component
+from typing import Union, List, Tuple, Sequence
 from ..networks import RLNetwork
 import torch
 import gym
 
-class PolicyComponent(StateDictObject):
-    def __init__(self,
-        agent: "Agent",
-        observation_space: gym.spaces.Space,
-        action_space: gym.spaces.Space,
-        make_policy: Optional[Callable[..., BasePolicy]],
-        reward_threshold: float = None,
-        device: Union[str, int, torch.device] = "cpu",
-        seed: int = None
-    ):
-        """
-        To subclass this, you need to implement at least a constructor with
-        the following arguments:
-        * agent: Agent,
-        * observation_space: gym.spaces.Space,
-        * action_space: gym.spaces.Space,
-        * make_policy: Callable[[], BasePolicy],
-        * reward_threshold: Optional[float],
-        * device: Union[str, int, torch.device],
-        * seed: Optional[int],
-        * any other arguments you want to pass to the policy.
+class BasePolicyComponent(Component):
+    """The base of policy components.
 
-        The constructor must create a policy object that inherits from
-        tianhsou.policy.BasePolicy and assign it to self.policy.
+    In order to subclass, implement a constructor that takes in the
+    required arguments and constructs the policy, assigning
+    it to self.policy.
 
-        The make_policy argument is a callable used to construct the actual
-        policy; this should be set to a default value by the derived policy,
-        but allowed to be overridden by the user (e.g. to wrap a default
-        DQNPolicy in an ICMPolicy etc.).
+    Most policies will need to construct models and optimizers. This can be
+    done using construct_optim and construct_rlnet, which both internally
+    rely on construct_config_object.
 
-        This policy attribute is automatically made part of the state dict.
-        """
-        super().__init__()
+    In construct_rlnet, an RLNetwork is constructed by default; also consult
+    its documentation to see how it can be used to wrap an existing nn.Module
+    to make it compatible with the tianshou.RL interface.
 
-        self._state_objs.extend([
-            'policy'
-        ])
+    Args:
+        method_name: The name of the method in a format without special
+            characters, so that it can be used as part of a path specification,
+            etc. – e.g. 'dqn' or 'a2c'.
+    """
 
-        self._device = device
-        self.observation_space = observation_space
-        self.action_space = action_space
-        self.make_policy = make_policy
-        self.reward_threshold = reward_threshold
-
-        if isinstance(self.observation_space, GymTuple):
-            self.state_shape = (osp.shape or osp.n for osp in self.observation_space)
-        else:
-            self.state_shape = self.observation_space.shape or self.observation_space.n
-
-        self.action_shape = self.action_space.shape or self.action_space.n
+    def __init__(self, method_name: str, **kwargs):
+        super().__init__(**kwargs)
+        self.method_name = method_name
 
     def construct_rlnet(
-        self, module, state_shape, action_shape, **kwargs
+        self,
+        module,
+        observation_shape: Union[int, Tuple[int], List[Tuple[int]]],
+        action_shape: Union[int, Sequence[int]],
+        device: Union[str, int, torch.device],
+        **model_kwargs
     ):
-        if module is None:
-            module = RLNetwork(
-                state_shape, action_shape,
-                device=self._device,
-                **kwargs
-            ).to(self._device)
-        elif isinstance(module, torch.nn.Module):
-            module = module.to(self._device)
-        elif isinstance(module, dict):
-            kwargs = kwargs.copy()
-            kwargs.update(module)
-            module = kwargs.pop("__type__", RLNetwork)
-            module = module(
-                state_shape, action_shape,
-                device=self._device,
-                **kwargs
-            ).to(self._device)
-
-        else:
-            module = module(
-                state_shape, action_shape,
-                device=self._device,
-                **kwargs
-            ).to(self._device)
-
+        module = construct_config_object(
+            module, torch.nn.Module,
+            default_obj_constructor=RLNetwork,
+            obj_kwargs=dict(model_kwargs,
+                observation_shape=observation_shape,
+                action_shape=action_shape,
+                device=device
+            )
+        )
+        
+        if not module is None:
+            module = module.to(device)
+        
         return module
 
-    def construct_optim(self, optim, model_params):
-        if optim is None:
-            optim = torch.optim.Adam(model_params)
-        elif isinstance(optim, Optimizer):
-            pass
-        elif isinstance(optim, dict):
-            kwargs = optim.copy()
-            optim = kwargs.pop("__type__", torch.optim.Adam)
-            optim = optim(model_params, **kwargs)
-        else:
-            optim = optim(model_params)
-
-        return optim
+    def construct_optim(
+        self, optim, model_params, **kwargs
+    ):
+        return construct_config_object(
+            optim, torch.optim.Optimizer,
+            default_obj_constructor=torch.optim.Adam,
+            obj_kwargs=dict(kwargs,
+                params=model_params
+            )
+        )

@@ -1,5 +1,6 @@
 from .env import setup_envs
-from .policy import PolicyComponent
-from .collector import CollectorComponent, PassiveCollector
+from .collector import BaseCollectorComponent, CollectorComponent, PassiveCollector
 from .logger import LoggerComponent
-from .preset import AgentPreset, AgentPresetWrapper
+from .trainer import TrainerComponent
+from .policy import BasePolicyComponent
+from .replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
