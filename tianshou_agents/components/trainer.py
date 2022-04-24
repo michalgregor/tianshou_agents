@@ -6,8 +6,13 @@ from tianshou.trainer import BaseTrainer
 from functools import partial
 from numbers import Number
 import torch
+# for incremental trainer
+from tianshou.trainer.utils import gather_info
+from tianshou.utils import tqdm_config
+from collections import deque
+import tqdm
 
-class DummyTrainer(BaseTrainer):
+class TrainingFinishedDummyTrainer(BaseTrainer):
     def __init__(self, *args, **kwargs):
         pass
 
@@ -15,7 +20,7 @@ class DummyTrainer(BaseTrainer):
         pass
 
     def __next__(self) -> Union[None, Tuple[int, Dict[str, Any], Dict[str, Any]]]:
-        raise StopIteration
+        return
 
     def test_step(self) -> Tuple[Dict[str, Any], bool]:
         pass
@@ -347,11 +352,11 @@ class TrainerComponent(Component):
             # if the trainer's epoch counter resumes
             # from the global counter in the logger
             if agent.epoch >= params["max_epoch"]:
-                return DummyTrainer()        
+                return TrainingFinishedDummyTrainer()
         else:
             # if the trainer maintains its own separate counter
             if params["max_epoch"] == 0:
-                return DummyTrainer()
+                return TrainingFinishedDummyTrainer()
 
         # autocompute update_per_step
         update_per_collect = params.pop("update_per_collect", None)
@@ -364,6 +369,15 @@ class TrainerComponent(Component):
 
         # try to autocompute some params if not provided
         step_per_collect = params.get("step_per_collect", None)
+
+        train_collector = params.get("train_collector", None)
+        if (
+            step_per_collect is None and
+            not train_collector is None and
+            not train_collector.env_num is None
+        ):
+            params["step_per_collect"] = train_collector.env_num
+
         train_envs = agent.train_envs
         if step_per_collect is None and not train_envs is None:
             params["step_per_collect"] = len(train_envs)
@@ -420,8 +434,134 @@ class TrainerComponent(Component):
 
     def _train_fn(self, agent, epoch, env_step):
         for callback in self.train_callbacks:
-            callback(epoch, env_step, agent.logger.gradient_step, agent)
+            callback(agent.epoch, agent.env_step, agent.logger.gradient_step, agent)
 
     def _test_fn(self, agent, epoch, env_step):
         for callback in self.test_callbacks:
-            callback(epoch, env_step, agent.logger.gradient_step, agent)
+            callback(agent.epoch, agent.env_step, agent.logger.gradient_step, agent)
+
+class StepWiseTrainer:
+    def __init__(self, trainer):
+        self.trainer = trainer
+        self._inner_gen = None
+
+    def __getattr__(self, name):
+        return getattr(self.trainer, name)
+
+    def __dir__(self):
+        d = set(self.trainer.__dir__())
+        d.update(set(super().__dir__()))
+        return d
+
+    def __iter__(self):  # type: ignore
+        self.trainer.reset()
+        return self
+
+    def _next_gen(self):
+        """Perform one epoch (both train and eval)."""
+        trainer = self.trainer
+
+        trainer.epoch += 1
+        trainer.iter_num += 1
+
+        if trainer.iter_num > 1:
+
+            # iterator exhaustion check
+            if trainer.epoch >= trainer.max_epoch:
+                return
+
+            # exit flag 1, when stop_fn succeeds in train_step or test_step
+            if trainer.stop_fn_flag:
+                return
+
+        # set policy in train mode
+        trainer.policy.train()
+
+        epoch_stat: Dict[str, Any] = dict()
+        # perform n step_per_epoch
+        with tqdm.tqdm(
+            total=trainer.step_per_epoch, desc=f"Epoch #{trainer.epoch}", **tqdm_config
+        ) as t:
+            while t.n < t.total and not trainer.stop_fn_flag:
+                data: Dict[str, Any] = dict()
+                result: Dict[str, Any] = dict()
+                if trainer.train_collector is not None:
+                    data, result, trainer.stop_fn_flag = trainer.train_step()
+                    t.update(result["n/st"])
+                    if trainer.stop_fn_flag:
+                        t.set_postfix(**data)
+                        break
+                else:
+                    assert trainer.buffer, "No train_collector or buffer specified"
+                    result["n/ep"] = len(trainer.buffer)
+                    result["n/st"] = int(trainer.gradient_step)
+                    t.update()
+
+                trainer.policy_update_fn(data, result)
+                t.set_postfix(**data)
+                yield
+
+            if t.n <= t.total and not trainer.stop_fn_flag:
+                t.update()
+
+        if not trainer.stop_fn_flag:
+            trainer.logger.save_data(
+                trainer.epoch, trainer.env_step, trainer.gradient_step, trainer.save_checkpoint_fn
+            )
+            # test
+            if trainer.test_collector is not None:
+                test_stat, trainer.stop_fn_flag = trainer.test_step()
+                if not trainer.is_run:
+                    epoch_stat.update(test_stat)
+
+        if not trainer.is_run:
+            epoch_stat.update({k: v.get() for k, v in trainer.stat.items()})
+            epoch_stat["gradient_step"] = trainer.gradient_step
+            epoch_stat.update(
+                {
+                    "env_step": trainer.env_step,
+                    "rew": trainer.last_rew,
+                    "len": int(trainer.last_len),
+                    "n/ep": int(result["n/ep"]),
+                    "n/st": int(result["n/st"]),
+                }
+            )
+            info = gather_info(
+                trainer.start_time, trainer.train_collector, trainer.test_collector,
+                trainer.best_reward, trainer.best_reward_std
+            )
+            yield trainer.epoch, epoch_stat, info
+        else:
+            yield None
+
+    def __next__(self) -> Union[None, Tuple[int, Dict[str, Any], Dict[str, Any]]]:
+        if self._inner_gen is None:
+            self._inner_gen = self._next_gen()
+
+        try:
+            ret = next(self._inner_gen)
+        except StopIteration:
+            self._inner_gen = self._next_gen()
+            ret = next(self._inner_gen)
+
+        return ret
+    
+    def run(self) -> Dict[str, Union[float, str]]:
+        """Consume iterator.
+
+        See itertools - recipes. Use functions that consume iterators at C speed
+        (feed the entire iterator into a zero-length deque).
+        """
+        trainer = self.trainer
+
+        try:
+            trainer.is_run = True
+            deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
+            info = gather_info(
+                trainer.start_time, trainer.train_collector, trainer.test_collector,
+                trainer.best_reward, trainer.best_reward_std
+            )
+        finally:
+            trainer.is_run = False
+
+        return info

@@ -1,9 +1,9 @@
 from .utils import StateDictObject, construct_config_object
 from .components.replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
-from .components.collector import CollectorComponent
+from .components.collector import CollectorComponent, PassiveCollector, Batch, DummyCollector
 from .components.policy import BasePolicyComponent
 from .components.logger import LoggerComponent
-from .components.trainer import TrainerComponent, CallbackType
+from .components.trainer import TrainerComponent, CallbackType, StepWiseTrainer
 from tianshou.data import ReplayBuffer, Collector
 from tianshou.policy import BasePolicy
 from tianshou.trainer import BaseTrainer
@@ -11,19 +11,13 @@ from tianshou.env import BaseVectorEnv
 from tianshou.utils.logger.base import BaseLogger
 from .components.env import extract_shape
 
-from typing import Optional, Union, Callable, Dict, Any, List, Type
+from typing import Optional, Union, Callable, Dict, Any, List, Type, Tuple
 from functools import partial
 import numpy as np
 import warnings
 import torch
 import gym
 import abc
-
-#
-#
-# add BaseAgent once the interface is completed
-#
-#
 
 class BaseAgent(StateDictObject):
     @abc.abstractmethod
@@ -80,7 +74,35 @@ class BaseAgent(StateDictObject):
             Dict[str, Any]: The results from the test collector.
         """
 
-class ComponentAgent(BaseAgent):
+class BasePassiveAgent(StateDictObject):
+    @abc.abstractmethod
+    def init_passive_training(self):
+        pass
+
+    @abc.abstractmethod
+    def finish_passive_training(self):
+        pass
+
+    @abc.abstractmethod
+    def act(
+        self,
+        obs: Union[Batch, np.ndarray, torch.Tensor],
+        done: Optional[Union[Batch, np.ndarray, torch.Tensor]],
+        state: Optional[Batch],
+        no_grad: bool = True,
+        return_info: bool = False,
+    ) -> Tuple[Batch, Batch]:
+        pass
+
+    @abc.abstractmethod
+    def observe_transition(
+        self,
+        data: Batch,
+        env_ids: Optional[Union[np.ndarray, List[int]]] = None
+    ) -> None:
+        pass
+
+class ComponentAgent(BaseAgent, BasePassiveAgent):
     """
     An agent class that builds the agent from several components:
         - replay buffer: stores the collected experience;
@@ -267,6 +289,11 @@ class ComponentAgent(BaseAgent):
         self.component_replay_buffer = None
         self.component_policy = None
         self.component_logger = None
+
+        # set up attributes for the passive agent interface
+        self._passive_collector = None
+        self._passive_trainer = None
+        self._passive_col_gen = None
 
         # setup the device
         if device is None:
@@ -520,6 +547,20 @@ class ComponentAgent(BaseAgent):
             return self.component_logger.logger
 
     @property
+    def buffer(self):
+        if self.component_replay_buffer is None:
+            return None
+        else:
+            return self.component_replay_buffer.replay_buffer
+
+    @property
+    def replay_buffer(self):
+        if self.component_replay_buffer is None:
+            return None
+        else:
+            return self.component_replay_buffer.replay_buffer
+
+    @property
     def train_callbacks(self):
         return self.component_trainer.train_callbacks
 
@@ -616,6 +657,94 @@ class ComponentAgent(BaseAgent):
             n_episode=episode_per_test, render=render, **kwargs
         )
 
+    # the passive agent interface
+    def init_passive_training(self,
+        num_envs: int = 1,
+        policy: Optional[BasePolicy] = None,
+        buffer: Optional[ReplayBuffer] = None,
+        preprocess_fn: Optional[Callable[..., Batch]] = None,
+        exploration_noise: bool = False,
+        **kwargs
+    ):
+        """Initializes the passive training. The keyword arguments (if any)
+        are used to override default trainer arguments.
+        """
+
+        if policy is None: policy = self.policy
+        if buffer is None: buffer = self.buffer
+
+        self._passive_collector = PassiveCollector(
+            policy=policy, buffer=buffer, preprocess_fn=preprocess_fn,
+            num_envs=num_envs, exploration_noise=exploration_noise,
+        )
+
+        trainer_kwargs = dict(
+            train_collector=self._passive_collector,
+            test_collector=None,
+            max_epoch=float('inf')
+        )
+
+        trainer_kwargs.update(kwargs)
+        trainer_kwargs["policy"] = policy
+        trainer_kwargs["buffer"] = buffer
+
+        self._passive_trainer = StepWiseTrainer(self.make_trainer(**trainer_kwargs))
+        self._passive_col_gen = None
+
+    def finish_passive_training(self):
+        """Finishes passive training by throwing away the passive collector
+        and trainer.
+        """
+        self._passive_collector = None
+        self._passive_trainer = None
+        self._passive_col_gen = None
+
+    def act(
+        self,
+        obs: Union[Batch, np.ndarray, torch.Tensor],
+        done: Optional[Union[Batch, np.ndarray, torch.Tensor]],
+        state: Optional[Batch],
+        no_grad: bool = True,
+        return_info: bool = False,
+    ) -> Tuple[Batch, Batch]:
+        return self._passive_collector.act(
+            obs=obs, done=done, state=state, no_grad=no_grad,
+            return_info=return_info
+        )
+
+    def observe_transition(
+        self,
+        data: Batch,
+        env_ids: Optional[Union[np.ndarray, List[int]]] = None,
+        step_per_collect: Optional[int] = None,
+        episode_per_collect: Optional[int] = None,
+    ) -> None:
+        passive_trainer = self._passive_trainer
+
+        if step_per_collect is None:
+            step_per_collect = passive_trainer.step_per_collect
+
+        if episode_per_collect is None:
+            episode_per_collect = passive_trainer.episode_per_collect
+
+        if self._passive_col_gen is None:
+            self._passive_col_gen = self._passive_collector.make_collect(
+                n_step=step_per_collect, n_episode=episode_per_collect
+            )
+            next(self._passive_col_gen)
+
+        self._passive_collector.observe_transition(data=data, env_ids=env_ids)
+        ret = next(self._passive_col_gen)
+
+        # we only do training once enough data has been collected
+        if not ret is None:
+            self._passive_col_gen = None
+
+            try:
+                next(passive_trainer)
+            except StopIteration:
+                raise StopIteration("The passive trainer has stopped.")
+            
 class Agent(ComponentAgent):
     """An agent class built upon ComponentAgent: it only adds convenient
     agent-level arguments for some component parameters.
@@ -1092,7 +1221,9 @@ class Agent(ComponentAgent):
         if component_logger is None:
             component_logger = logger
 
-        logger_kwargs = dict(dict(), **logger_kwargs)
+        logger_kwargs = dict(dict(
+            task_name=task_name
+        ), **logger_kwargs)
 
         # trainer
         trainer_kwargs = dict(dict(

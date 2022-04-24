@@ -11,6 +11,7 @@ from typing import Any, Optional, Union, Callable, Dict, Sequence
 from torch.optim import Optimizer
 from numbers import Number
 import torch
+import gym
 
 class DQNPolicyComponent(BasePolicyComponent):
     """Implementation of Deep Q Network. arXiv:1312.5602.
@@ -115,6 +116,8 @@ class DQNPolicyComponent(BasePolicyComponent):
                 max_epoch*step_per_epoch*0.5, 0.73, 0.1
             ),
         eps_test: Union[float, Schedule, Callable[[int, int], Schedule]] = 0.01,
+        observation_space: Optional[gym.spaces.Space] = None,
+        action_space: Optional[gym.spaces.Space] = None,
         observation_shape: Optional[Union[int, Sequence[int]]] = None,
         action_shape: Optional[Union[int, Sequence[int]]] = None,
         **policy_kwargs
@@ -134,6 +137,9 @@ class DQNPolicyComponent(BasePolicyComponent):
             # setup the default policy class
             if component_class is None:
                 component_class = DQNPolicy
+
+            if observation_shape is None: observation_shape = observation_space
+            if action_shape is None: action_shape = action_space
 
             # the network
             qnetwork = self.construct_rlnet(

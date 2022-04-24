@@ -144,29 +144,3 @@ class TestComponentAgent(unittest.TestCase):
         self.assertEqual(self.agent.epoch, 4)
         self.assertEqual(trainer1.epoch, 3) # iteration stops at max_epoch+1
         self.assertEqual(trainer2.epoch, 2) # zip iteration stops with trainer1
-    
-
-
-
-
-
-
-
-
-
-
-#
-# TODO: add test for two trainers running in parallel: check that steps and
-# epochs are counted correctly
-#
-# should each trainer have its separate counter? that would be problematic
-# w.r.t. resuming training after interruption
-#
-
-
-
-# IF THERE ARE SEVERAL TRAINERS,
-# THEY WILL NOT KEEP THE CORRECT COUNT INTERNALLY;
-
-# LET'S HAVE THEM ALWAYS COUNT FROM 0s to the number of epochs specified?
-
