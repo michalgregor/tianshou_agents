@@ -1,3 +1,4 @@
+import time
 from .component import Component
 from .replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
 from .env import setup_envs, extract_shape
@@ -126,7 +127,11 @@ class CollectorComponent(BaseCollectorComponent):
     @property
     def action_shape(self):
         return extract_shape(self.action_space)
-        
+
+class DummyCollector:
+    def __init__(self, buffer):
+        self.buffer = buffer
+
 class PassiveCollector:
     def __init__(
         self,
@@ -135,12 +140,18 @@ class PassiveCollector:
         preprocess_fn: Optional[Callable[..., Batch]] = None,
         num_envs: int = 1,
         exploration_noise: bool = False,
+        validate_collect_args = True
     ) -> None:
         """
         preprocess_fn must not operate in-place; it can be called multiple times
         for the same observations.
         """
         super().__init__()
+
+        self.validate_collect_args = validate_collect_args
+        self._collect_args = {}
+        self._collect_res = None
+
         self.env_num = num_envs
         self.exploration_noise = exploration_noise
         self.policy = policy
@@ -187,7 +198,7 @@ class PassiveCollector:
 
     def reset_stat(self) -> None:
         """Reset the statistic variables."""
-        self.collect_step, self.collect_episode = 0, 0
+        self.collect_step, self.collect_episode, self.collect_time = 0, 0, 0.0
 
     def reset_buffer(self, keep_statistics: bool = False) -> None:
         """Reset the data buffer."""
@@ -327,15 +338,23 @@ class PassiveCollector:
                     env_id=self.ready_env_ids,
                 )
             )
-
-    def collect(
+    
+    def make_collect(
         self,
         n_step: Optional[int] = None,
         n_episode: Optional[int] = None,
         random: bool = False,
         render: Optional[float] = None,
         no_grad: bool = True,
-    ) -> Dict[str, Any]:
+    ):
+        self._collect_args = dict(
+            n_step=n_step,
+            n_episode=n_episode,
+            random=random,
+            render=render,
+            no_grad=no_grad,
+        )
+
         if n_step is not None:
             assert n_episode is None, (
                 f"Only one of n_step or n_episode is allowed in Collector."
@@ -357,6 +376,8 @@ class PassiveCollector:
                 "in AsyncCollector.collect()."
             )
 
+        start_time = time.time()
+        
         self.step_count = 0
         self.episode_count = 0
         self.episode_rews = []
@@ -403,16 +424,17 @@ class PassiveCollector:
                         mask[env_ind_local[:surplus_env_num]] = False
                         self.ready_env_ids = self.ready_env_ids[mask]
 
-            # once we have consumed the observed transition, we yield
-            yield
-
             if (n_step and self.step_count >= n_step) or \
                     (n_episode and self.episode_count >= n_episode):
                 break
 
+            # once we have consumed the observed transition, we yield
+            yield
+
         # generate statistics
         self.collect_step += self.step_count
         self.collect_episode += self.episode_count
+        self.collect_time += max(time.time() - start_time, 1e-9)
 
         if self.episode_count > 0:
             rews, lens, idxs = list(
@@ -427,7 +449,7 @@ class PassiveCollector:
             rews, lens, idxs = np.array([]), np.array([], int), np.array([], int)
             rew_mean = rew_std = len_mean = len_std = 0
 
-        yield {
+        self._collect_res = {
             "n/ep": self.episode_count,
             "n/st": self.step_count,
             "rews": rews,
@@ -438,3 +460,36 @@ class PassiveCollector:
             "rew_std": rew_std,
             "len_std": len_std,
         }
+
+        yield self._collect_res
+
+    def collect(
+        self,
+        n_step: Optional[int] = None,
+        n_episode: Optional[int] = None,
+        random: bool = False,
+        render: Optional[float] = None,
+        no_grad: bool = True,
+    ) -> Dict[str, Any]:
+        if self._collect_res is None:
+            raise ValueError("make_collector has not yielded since collect was called last.")
+
+        args = dict(
+            n_step=n_step,
+            n_episode=n_episode,
+            random=random,
+            render=render,
+            no_grad=no_grad,
+        )
+
+        if self.validate_collect_args and self._collect_args != args:
+            raise ValueError(
+                f"PassiveCollector.collect() was called with different arguments than the previous make_collector. "
+                f"Previous call: {self._collect_args}. "
+                f"Current call: {args}. "
+                "To disable this check, set PassiveCollector.validate_collect_args=False."
+            )
+
+        collect_res = self._collect_res
+        self._collect_res = None
+        return collect_res

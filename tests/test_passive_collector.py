@@ -23,7 +23,7 @@ class TestPassiveCollector(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def testAgentTrainAndTest(self):
+    def testCollection(self):
         agent = sac_simple(
             'Pendulum-v0', stop_criterion=-250, seed=0, train_envs=5,
             train_env_class=DummyVectorEnv
@@ -37,14 +37,14 @@ class TestPassiveCollector(unittest.TestCase):
 
         agent.train_collector.reset()
 
-        col_gen = passive_collector.collect(n_step=12)
+        col_gen = passive_collector.make_collect(n_step=12)
         next(col_gen)
 
         obs = agent.train_envs.reset()
         state = None
         done = None
 
-        for istep in range(10):
+        for istep in range(3):
             act_batch, state = passive_collector.act(obs, state=state, done=done)
             ready_env_ids = passive_collector.ready_env_ids
             obs_next, rew, done, info = agent.train_envs.step(act_batch.act, ready_env_ids)
@@ -53,10 +53,9 @@ class TestPassiveCollector(unittest.TestCase):
             transition.update(**act_batch, **state)
 
             passive_collector.observe_transition(transition)
-
             ret = next(col_gen)
 
-            if istep < 3:
+            if istep < 2:
                 self.assertIsNone(ret)
             else:
                 self.assertIsNotNone(ret)
@@ -69,7 +68,7 @@ class TestPassiveCollector(unittest.TestCase):
 
             if len(envs_done_local) > 0:
                 envs_done_global = ready_env_ids[envs_done_local]
-                obs[envs_done_local] = agent.train_envs.reset_env(envs_done_global)
+                obs[envs_done_local] = agent.train_envs.reset(envs_done_global)
 
         len_buffer = len(passive_collector.buffer)
         self.assertEqual(len_buffer, 15)
