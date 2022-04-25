@@ -293,6 +293,17 @@ class TrainerComponent(Component):
         else:
             self.save_checkpoint_callbacks.append(save_checkpoint_callbacks) # single callback
 
+        # default prefill_steps
+        env_num = None
+        if not agent.train_collector is None:
+            env_num = agent.train_collector.env_num
+
+        if env_num is None and not agent.train_envs is None:
+            env_num = len(agent.train_envs)
+
+        if self.prefill_steps is None and not env_num is None:
+            self.prefill_steps = self.batch_size * env_num
+
     def _init(self, agent):
         """
         Initializes the trainer.
@@ -468,11 +479,11 @@ class StepWiseTrainer:
 
             # iterator exhaustion check
             if trainer.epoch >= trainer.max_epoch:
-                return
+                return True
 
             # exit flag 1, when stop_fn succeeds in train_step or test_step
             if trainer.stop_fn_flag:
-                return
+                return True
 
         # set policy in train mode
         trainer.policy.train()
@@ -483,6 +494,7 @@ class StepWiseTrainer:
             total=trainer.step_per_epoch, desc=f"Epoch #{trainer.epoch}", **tqdm_config
         ) as t:
             while t.n < t.total and not trainer.stop_fn_flag:
+                if t.n: yield
                 data: Dict[str, Any] = dict()
                 result: Dict[str, Any] = dict()
                 if trainer.train_collector is not None:
@@ -499,7 +511,6 @@ class StepWiseTrainer:
 
                 trainer.policy_update_fn(data, result)
                 t.set_postfix(**data)
-                yield
 
             if t.n <= t.total and not trainer.stop_fn_flag:
                 t.update()
@@ -530,9 +541,9 @@ class StepWiseTrainer:
                 trainer.start_time, trainer.train_collector, trainer.test_collector,
                 trainer.best_reward, trainer.best_reward_std
             )
-            yield trainer.epoch, epoch_stat, info
+            return trainer.epoch, epoch_stat, info
         else:
-            yield None
+            return None
 
     def __next__(self) -> Union[None, Tuple[int, Dict[str, Any], Dict[str, Any]]]:
         if self._inner_gen is None:
@@ -540,9 +551,12 @@ class StepWiseTrainer:
 
         try:
             ret = next(self._inner_gen)
-        except StopIteration:
-            self._inner_gen = self._next_gen()
-            ret = next(self._inner_gen)
+        except StopIteration as e:
+            self._inner_gen = None
+            ret = e.value
+
+            if isinstance(ret, bool) and ret:
+                raise StopIteration from e
 
         return ret
     
