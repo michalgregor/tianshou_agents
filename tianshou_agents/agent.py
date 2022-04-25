@@ -689,6 +689,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         trainer_kwargs["buffer"] = buffer
 
         self._passive_trainer = StepWiseTrainer(self.make_trainer(**trainer_kwargs))
+        self._passive_trainer = iter(self._passive_trainer)
         self._passive_col_gen = None
 
     def finish_passive_training(self):
@@ -718,6 +719,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         env_ids: Optional[Union[np.ndarray, List[int]]] = None,
         step_per_collect: Optional[int] = None,
         episode_per_collect: Optional[int] = None,
+        training_enabled: bool = True,
     ) -> None:
         passive_trainer = self._passive_trainer
 
@@ -740,10 +742,11 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         if not ret is None:
             self._passive_col_gen = None
 
-            try:
-                next(passive_trainer)
-            except StopIteration:
-                raise StopIteration("The passive trainer has stopped.")
+            if training_enabled:
+                try:
+                    next(passive_trainer)
+                except StopIteration:
+                    raise StopIteration("The passive trainer has stopped.")
             
 class Agent(ComponentAgent):
     """An agent class built upon ComponentAgent: it only adds convenient
