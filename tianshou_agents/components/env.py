@@ -11,7 +11,7 @@ def extract_shape(space):
 
     return shape
 
-def setup_envs(task, env_class, envs):
+def setup_envs(task, env_class, envs, seed=None):
     if isinstance(envs, int):
         if env_class is None:
             env_class = DummyVectorEnv if envs == 1 else SubprocVectorEnv
@@ -19,6 +19,7 @@ def setup_envs(task, env_class, envs):
         envs = env_class(
             [task for _ in range(envs)]
         )
+
     elif isinstance(envs, list):
         if env_class is None:
             env_class = DummyVectorEnv if len(envs) == 1 else SubprocVectorEnv
@@ -30,5 +31,8 @@ def setup_envs(task, env_class, envs):
         envs = DummyVectorEnv([lambda: envs])
     else:
         raise TypeError(f"envs: a BaseVectorEnv or an integer expected, got '{envs}'.")
+
+    if not seed is None:
+        envs.seed(seed)
 
     return envs

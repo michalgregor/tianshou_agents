@@ -69,7 +69,7 @@ class CollectorComponent(BaseCollectorComponent):
                 task = partial(gym.make, task_name)
 
             # construct the enviroments if necessary
-            env = setup_envs(task, env_class, env)
+            env = setup_envs(task, env_class, env, seed=seed)
 
             if policy is None:
                 policy = RandomPolicy(env.action_space[0])
@@ -96,13 +96,6 @@ class CollectorComponent(BaseCollectorComponent):
                     if not component_replay_buffer is None else None,
                 **kwargs
             )
-
-        if (
-            not seed is None and
-            not self.collector is None and
-            not self.collector.env is None
-        ):
-            self.collector.env.seed(seed=seed)
 
     def setup(
         self,
