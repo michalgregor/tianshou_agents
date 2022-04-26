@@ -349,8 +349,7 @@ sac_classic = AgentPreset(sac_classic_hyperparameters)
 
 sac_simple_hyperparameters = derive_conf(sac_base_config, {
     # general
-    'test_envs': 5,
-    'episode_per_test': 10
+    'test_envs': 5
 })
 
 sac_simple = AgentPreset(sac_simple_hyperparameters)

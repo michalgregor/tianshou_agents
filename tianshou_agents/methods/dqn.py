@@ -268,7 +268,6 @@ dqn_simple_hyperparameters = derive_conf(dqn_base_config, {
     # general
     'train_envs': 1,
     'test_envs': 5,
-    'episode_per_test': 10,
 })
 
 dqn_simple = AgentPreset(dqn_simple_hyperparameters)
