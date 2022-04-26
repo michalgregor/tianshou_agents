@@ -64,7 +64,8 @@ class RLNetwork(nn.Module):
                 input_dim=input_dim,
                 output_dim=output_dim,
                 device=device
-            )
+            ),
+            none_as_default=True
         ).to(device)
 
         if output_dim > 0:

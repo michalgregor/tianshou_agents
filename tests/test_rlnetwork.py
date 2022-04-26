@@ -4,29 +4,29 @@ from numbers import Number
 from torch import nn
 import torch
 
-def make_net(num_inputs, num_outputs, device):
+def make_net(input_dim, output_dim, device):
     return nn.Sequential(
-        nn.Linear(num_inputs, 256),
+        nn.Linear(input_dim, 256),
         nn.ReLU(),
         nn.Linear(256, 128),
         nn.ReLU(),
-        nn.Linear(128, num_outputs),
-    )
+        nn.Linear(128, output_dim),
+    ).to(device)
     
 class TestNet(nn.Module):
-    def __init__(self, num_inputs, num_outputs, device):
+    def __init__(self, input_dim, output_dim, device):
         super().__init__()
 
-        if isinstance(num_inputs, Number):
-            num_inputs = [num_inputs]
+        if isinstance(input_dim, Number):
+            input_dim = [input_dim]
 
-        self.input_dense = [nn.Linear(ninp, 256) for ninp in num_inputs]
-        self.input_activations = [nn.ReLU() for _ in num_inputs]
+        self.input_dense = [nn.Linear(ninp, 256) for ninp in input_dim]
+        self.input_activations = [nn.ReLU() for _ in input_dim]
 
         self.dense1 = nn.Linear(256, 256)
         self.activation1 = nn.ReLU()
 
-        self.output_dense = nn.Linear(256, num_outputs)
+        self.output_dense = nn.Linear(256, output_dim)
 
     def forward(self, *args, state=None):
         y = 0
@@ -42,7 +42,7 @@ class TestNet(nn.Module):
         return y
 
 class TestConvNet(nn.Module):
-    def __init__(self, num_inputs, num_outputs, **kwargs):
+    def __init__(self, input_dim, output_dim, **kwargs):
         super().__init__()
 
         self.flatten = nn.Flatten()
@@ -50,7 +50,7 @@ class TestConvNet(nn.Module):
 
         self.conv = nn.Conv2d(3, 10, (3, 3))
         self.dense1 = nn.Linear(640, 25)
-        self.dense2 = nn.Linear(25, num_outputs)
+        self.dense2 = nn.Linear(25, output_dim)
 
     def forward(self, x1, state=None):
         y = self.conv(x1)
@@ -64,7 +64,7 @@ class TestConvNet(nn.Module):
         return y
 
 class TestConvNet2(nn.Module):
-    def __init__(self, num_inputs, num_outputs, **kwargs):
+    def __init__(self, input_dim, output_dim, **kwargs):
         super().__init__()
 
         self.flatten = nn.Flatten()
@@ -73,7 +73,7 @@ class TestConvNet2(nn.Module):
         self.conv = nn.Conv2d(3, 10, (3, 3))
         self.dense1 = nn.Linear(640, 25)
         self.dense2 = nn.Linear(9, 25)
-        self.dense3 = nn.Linear(25, num_outputs)
+        self.dense3 = nn.Linear(25, output_dim)
 
     def forward(self, x1, x2, state=None):
         y1 = self.conv(x1)
