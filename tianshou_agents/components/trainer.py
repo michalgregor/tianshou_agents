@@ -395,8 +395,12 @@ class TrainerComponent(Component):
         
         episode_per_test = params.get("episode_per_test", None)
         test_envs = agent.test_envs
+
         if episode_per_test is None and not test_envs is None:
             params["episode_per_test"] = len(test_envs)
+
+        if episode_per_test is None:
+            params["episode_per_test"] = 1
 
         # try to get the reward threshold from the env if not provided
         reward_threshold = params.pop("reward_threshold", None)
