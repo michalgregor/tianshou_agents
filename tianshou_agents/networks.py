@@ -1,4 +1,5 @@
 from tianshou.utils.net.common import MLP
+from .utils import construct_config_object
 from typing import Any, Dict, List, Tuple, Union, Optional, Sequence, Callable
 from numbers import Number
 from torch import nn
@@ -12,7 +13,7 @@ class RLNetwork(nn.Module):
         self,
         observation_shape: Union[int, Tuple[int], List[Tuple[int]]],
         action_shape: Union[int, Sequence[int]] = 0,
-        model: Optional[Union[nn.Module, Callable[..., nn.Module]]] = None,
+        model: Optional[Union[nn.Module, Callable[..., nn.Module], Dict[str, Any]]] = None,
         device: Union[str, int, torch.device] = "cpu",
         flatten: bool = True,
         stateful: bool = False,
@@ -56,11 +57,15 @@ class RLNetwork(nn.Module):
         else:
             output_dim = action_dim
 
-        if isinstance(model, nn.Module):
-            self.model = model
-        else:
-            if model is None: model = MLP
-            self.model = model(input_dim, output_dim, device=device, **model_kwargs).to(device)
+        self.model = construct_config_object(
+            model, nn.Module,
+            default_obj_constructor=MLP,
+            obj_kwargs=dict(model_kwargs,
+                input_dim=input_dim,
+                output_dim=output_dim,
+                device=device
+            )
+        ).to(device)
 
         if output_dim > 0:
             self.output_dim = output_dim
