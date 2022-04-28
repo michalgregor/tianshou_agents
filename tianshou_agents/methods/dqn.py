@@ -4,7 +4,6 @@ from ..components import BasePolicyComponent
 from ..schedules import Schedule, ConstSchedule, ExponentialSchedule
 from ..callbacks import ScheduleCallback
 from ..networks import MLP
-from ..utils import derive_conf
 from tianshou.trainer import OffpolicyTrainer
 from tianshou.policy import DQNPolicy, BasePolicy
 from typing import Any, Optional, Union, Callable, Dict, Sequence
@@ -108,7 +107,7 @@ class DQNPolicyComponent(BasePolicyComponent):
         method_name: str = "dqn",
         discount_factor: float = 0.99,
         qnetwork: Optional[Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]]] = None,
-        optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = 'auto',
+        optim: Optional[Union[Optimizer, Callable[..., Optimizer], Dict[str, Any]]] = {},
         target_update_freq: int = 0,
         is_double: bool = True,
         eps_train: Union[float, Schedule, Callable[[int, int], Schedule]] = 
@@ -193,28 +192,28 @@ class DQNPolicyComponent(BasePolicyComponent):
 
 dqn_base_config = {
     # agent
+    'task': None,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'seed': None,
-    # components
-    'component_replay_buffer': 1000000,
-    'component_train_collector': 'auto',
-    'component_test_collector': 'auto',
-    'component_policy': DQNPolicyComponent,
-    'component_logger': 'log',
-    'component_trainer': {'component_class': OffpolicyTrainer},   
-    # collectors
+    # replay buffer
+    'replay_buffer': 1000000,
+    # train collector
+    'train_collector': {},
     'train_envs': 1,
-    'test_envs': 1,
     'train_env_class': None,
-    'test_env_class': None,
     'exploration_noise_train': True,
+    # test collector
+    'test_collector': {},
+    'test_envs': 1,
+    'test_env_class': None,
     'exploration_noise_test': True,
-    'task': None,
-    # dqn
+    'test_task': None,
+    # policy
+    'policy': DQNPolicyComponent,
     'is_double': True,
     'eps_test': 0.01,
     'eps_train': lambda max_epoch, step_per_epoch: ExponentialSchedule(
-        max_epoch*step_per_epoch*0.5, 0.73, 0.1),
+            max_epoch*step_per_epoch*0.5, 0.73, 0.1),
     'discount_factor': 0.99,
     'target_update_freq': 500,
     'estimation_step': 1,
@@ -227,8 +226,9 @@ dqn_base_config = {
             {"hidden_sizes": [128, 128]} # V_param
         )
     ),
-    'optim': dict(lr=0.013),  
-     # trainer
+    'optim': dict(lr=0.013),
+    # trainer
+    'trainer': {'component_class': OffpolicyTrainer},
     'max_epoch': 10,
     'step_per_epoch': 80000,
     'prefill_steps': None,
@@ -238,36 +238,30 @@ dqn_base_config = {
     'batch_size': 128,   
     'train_callbacks': None,
     'test_callbacks': None,
-    'train_collector': None,
-    'test_collector': None,
     'stop_criterion': None,
-    'save_best_callbacks': 'auto',
-    'save_checkpoint_callbacks': 'auto'
+    'save_best_callbacks': {},
+    'save_checkpoint_callbacks': {},
+    # logger
+    'logger': 'log'
 }
 
 dqn_default = AgentPreset(dqn_base_config)
 
 # classic
-
-dqn_classic_hyperparameters = derive_conf(dqn_base_config, {
-    # general
-    'train_envs': 16,
-    'test_envs': 100,
+dqn_classic_hyperparameters = dqn_default.derive_conf({
+    'train_envs': 1,
+    'test_envs': 100
 })
 
 dqn_classic = AgentPreset(dqn_classic_hyperparameters)
 
 # simple
 
-dqn_simple_hyperparameters = derive_conf(dqn_base_config, {
-    # dqn
-    'qnetwork': dict(
-        model=MLP,
-        hidden_sizes=[128, 128]
-    ),
-    # general
+dqn_simple_hyperparameters = dqn_default.derive_conf({
     'train_envs': 1,
-    'test_envs': 5,
+    'test_envs': 5
 })
+
+dqn_simple_hyperparameters["policy"]["qnetwork"]["dueling_param"] = None
 
 dqn_simple = AgentPreset(dqn_simple_hyperparameters)

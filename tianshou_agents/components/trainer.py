@@ -1,6 +1,6 @@
 from .component import Component
 from ..callbacks import CallbackType, SaveCallback, CheckpointCallback
-from ..utils import construct_config_object
+from ..utils import ConfigBuilder
 from typing import List, Optional, Callable, Union, Dict, Any, Tuple
 from tianshou.trainer import BaseTrainer
 from functools import partial
@@ -47,10 +47,10 @@ class TrainerComponent(Component):
             Dict[str, Any]
         ], optional): A list of callbacks invoked at the beginning of each
             training step. The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+            ``f(epoch: int, env_step: int, gradient_step: int, agent: ComponentAgent) -> None``.
 
             Optionally, save callbacks can be constructed using
-            a construct_config_object spec.
+            a ConfigBuilder spec.
 
         test_callbacks (Union[
             List[CallbackType],
@@ -58,10 +58,10 @@ class TrainerComponent(Component):
             Dict[str, Any]
         ], optional): A list of callbacks invoked at the beginning of each
             testing step. The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+            ``f(epoch: int, env_step: int, gradient_step: int, agent: ComponentAgent) -> None``.
 
             Optionally, save callbacks can be constructed using
-            a construct_config_object spec.
+            a ConfigBuilder spec.
 
         save_best_callbacks (Union[
             str,
@@ -72,13 +72,13 @@ class TrainerComponent(Component):
             average mean reward in evaluation phase gets better.
 
             The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+            ``f(epoch: int, env_step: int, gradient_step: int, agent: ComponentAgent) -> None``.
 
             Optionally, a callback can be constructed automatically using
-            a construct_config_object spec.
+            a ConfigBuilder spec.
             
-            In that case a string other than 'auto' is interpreted as
-            specifying the log_path argument.
+            In that case a string is interpreted as specifying the log_path
+            argument.
 
             If log_path is not specified in this way or through the dict
             argument, the trainer will try to use the log_path from the logger, 
@@ -92,19 +92,39 @@ class TrainerComponent(Component):
         ], optional): A list of callbacks invoked after every step of training.
 
             The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
+            ``f(epoch: int, env_step: int, gradient_step: int, agent: ComponentAgent) -> None``.
 
             Optionally, a save callback can be constructed automatically using
-            a construct_config_object spec. Unless otherwise specified, the
+            a ConfigBuilder spec. Unless otherwise specified, the
             interval is going to default to max(int(self.max_epoch / 10), 1)
             if max_epoch is specified and to 1 otherwise.
 
-            If a callback is being constructed automatically, a string other
-            than 'auto' is interpreted as specifying the log_path argument.
+            If a callback is being constructed automatically, a string is
+            interpreted as specifying the log_path argument.
 
             If log_path is not specified in this way or through the dict
             argument, the trainer will try to use the log_path from the logger, 
             if available.
+
+        stop_criterion (
+                Union[
+                    bool,
+                    str,
+                    Callable[[float, Union[float, None], 'ComponentAgent'], float]
+                ], optional
+            ):
+                The criterion used to stop training before ``max_epoch`` has
+                been reached:
+                    * If set to ``True``, training stops once the
+                        mean test reward from the previous collect reaches the
+                        environment's reward threshold;
+                    * If set to ``False``, the stop criterion is disabled;
+                    * If a float, training stops once the mean test reward
+                        from the previous collect reaches ``stop_criterion``.
+                    * If set to ``callable(mean_rewards, reward_threshold, agent)``,
+                        the callable is used to determine whether training should
+                        be stopped or not; mean_rewards is the mean test reward
+                        from the previous collect.
 
         resume_from_log (bool): Whether trainer's counters should resume from the
             global counters in the logger. If False, the trainer will maintain
@@ -120,8 +140,41 @@ class TrainerComponent(Component):
 
             This can also be specified as a keyword argument when creating
             a trainer using make_trainer.
+
+        prefill_steps (int): The number of steps to prefill the replay
+            buffer. The prefilling is done when the first trainer is constructed
+            in the trainer component. Prefilling is only done if a train
+            collector is available. It is not done if the agent is run in
+            passive mode – the user provides the data then and is responsible
+            for prefilling the buffer when necessary.
+
+        reward_threshold (float, optional): The reward threshold to use for
+            the stop criterion (if any). Note that richer stopping criteria can
+            be specified using the stop_criterion argument.
     """
     
+    train_callback_builder = ConfigBuilder(
+        obj_type=list,
+        default_obj_constructor=lambda *args, **kwargs: [],
+    )
+
+    test_callback_builder = ConfigBuilder(
+        obj_type=list,
+        default_obj_constructor=lambda *args, **kwargs: [],
+    )
+
+    save_best_builder = ConfigBuilder(
+        obj_type=list,
+        default_obj_constructor=SaveCallback,
+        default_arg_name="log_path"
+    )
+
+    save_checkpoint_builder = ConfigBuilder(
+        obj_type=list,
+        default_obj_constructor=CheckpointCallback,
+        default_arg_name="log_path"
+    )
+
     def __init__(self,
         agent: 'ComponentAgent',
         device: Union[str, int, torch.device] = "cpu",
@@ -216,10 +269,9 @@ class TrainerComponent(Component):
         seed: Optional[int] = None
     ):
         # train callbacks
-        train_callbacks = construct_config_object(
-            self._setup_args.pop('train_callbacks'), list,
-            default_obj_constructor=lambda *args, **kwargs: [],
-            obj_kwargs=dict(
+        train_callbacks = self.train_callback_builder(
+            self._setup_args.pop('train_callbacks'),
+            default_kwargs=dict(
                 agent=agent,
                 device=device,
                 seed=seed,
@@ -234,10 +286,9 @@ class TrainerComponent(Component):
             self.train_callbacks.append(train_callbacks) # single callback
 
         # test callbacks
-        test_callbacks = construct_config_object(
-            self._setup_args.pop('test_callbacks'), list,
-            default_obj_constructor=lambda *args, **kwargs: [],
-            obj_kwargs=dict(
+        test_callbacks = self.test_callback_builder(
+            self._setup_args.pop('test_callbacks'),
+            default_kwargs=dict(
                 agent=agent,
                 device=device,
                 seed=seed,
@@ -258,13 +309,11 @@ class TrainerComponent(Component):
             log_path = None
             
         # save best callbacks
-        obj_kwargs = {} if log_path is None else dict(log_path=log_path)
+        default_kwargs = {} if log_path is None else dict(log_path=log_path)
 
-        save_best_callbacks = construct_config_object(
-            self._setup_args.pop('save_best_callbacks'), list,
-            default_obj_constructor=SaveCallback,
-            default_arg_name="log_path",
-            obj_kwargs=obj_kwargs
+        save_best_callbacks = self.save_best_builder(
+            self._setup_args.pop('save_best_callbacks'),
+            default_kwargs=default_kwargs
         )
 
         if save_best_callbacks is None:
@@ -275,15 +324,13 @@ class TrainerComponent(Component):
             self.save_best_callbacks.append(save_best_callbacks) # single callback
 
         # save checkpoint callbacks
-        obj_kwargs = {} if log_path is None else dict(log_path=log_path)
-        obj_kwargs['interval'] = (max(int(self.max_epoch / 10), 1)
+        default_kwargs = {} if log_path is None else dict(log_path=log_path)
+        default_kwargs['interval'] = (max(int(self.max_epoch / 10), 1)
             if not self.max_epoch is None else 1)
 
-        save_checkpoint_callbacks = construct_config_object(
-            self._setup_args.pop('save_checkpoint_callbacks'), list,
-            default_obj_constructor=CheckpointCallback,
-            default_arg_name="log_path",
-            obj_kwargs=obj_kwargs
+        save_checkpoint_callbacks = self.save_checkpoint_builder(
+            self._setup_args.pop('save_checkpoint_callbacks'),
+            default_kwargs=default_kwargs
         )
 
         if save_checkpoint_callbacks is None:
@@ -404,7 +451,10 @@ class TrainerComponent(Component):
 
         # try to get the reward threshold from the env if not provided
         reward_threshold = params.pop("reward_threshold", None)
-        if reward_threshold is None and not train_envs is None:
+        if (reward_threshold is None and
+            not train_envs is None and
+            hasattr(train_envs, 'spec')
+        ):
             reward_threshold = train_envs.spec[0].reward_threshold
 
         # if stop_fn not already overriden, set it up here
@@ -440,7 +490,8 @@ class TrainerComponent(Component):
         elif (not reward_threshold is None and (
                 (isinstance(self.stop_criterion, bool) and self.stop_criterion)
                 or
-                (isinstance(self.stop_criterion, str) and self.stop_criterion == 'auto')
+                # an empty dict means use default behaviour
+                (isinstance(self.stop_criterion, dict) and not len(self.stop_criterion))
             )
         ):
             return mean_rewards >= reward_threshold

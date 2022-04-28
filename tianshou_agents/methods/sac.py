@@ -1,8 +1,7 @@
-from ..agent import ComponentAgent, Agent
+from ..agent import ComponentAgent
 from ..components.preset import AgentPreset
 from ..networks import MLP
 from ..components import BasePolicyComponent
-from ..utils import derive_conf
 from tianshou.policy import SACPolicy, BasePolicy
 from tianshou.exploration import BaseNoise
 from tianshou.utils.net.continuous import ActorProb, Critic
@@ -283,24 +282,25 @@ class SACPolicyComponent(BasePolicyComponent):
 
 sac_base_config = {
     # agent
+    'task': None,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'seed': None,
-    # components
-    'component_replay_buffer': 1000000,
-    'component_train_collector': 'auto',
-    'component_test_collector': 'auto',
-    'component_policy': SACPolicyComponent,
-    'component_logger': 'log',
-    'component_trainer': {'component_class': OffpolicyTrainer},   
-    # collectors
+    # replay buffer
+    'replay_buffer': 1000000,
+    # train collector
+    'train_collector': {},
     'train_envs': 1,
-    'test_envs': 1,
     'train_env_class': None,
-    'test_env_class': None,
     'exploration_noise_train': True,
-    'exploration_noise_test': True,
     'task': None,
-    # sac
+    # test collector
+    'test_collector': {},
+    'test_envs': 1,
+    'test_env_class': None,
+    'exploration_noise_test': True,
+    'test_task': None,
+    # policy
+    'policy': SACPolicyComponent,
     'exploration_noise': None,
     'gamma': 0.99,
     'tau': 0.005,
@@ -317,6 +317,7 @@ sac_base_config = {
     'critic2_optim': dict(lr=3e-4),
     'alpha_optim': dict(lr=3e-4),
     # trainer
+    'trainer': {'component_class': OffpolicyTrainer},
     'max_epoch': 10,
     'step_per_epoch': 80000,
     'prefill_steps': None,
@@ -326,19 +327,18 @@ sac_base_config = {
     'batch_size': 128,
     'train_callbacks': None,
     'test_callbacks': None,
-    'train_collector': None,
-    'test_collector': None,
     'stop_criterion': None,
-    'save_best_callbacks': 'auto',
-    'save_checkpoint_callbacks': 'auto'
+    'save_best_callbacks': {},
+    'save_checkpoint_callbacks': {},
+    # logger
+    'logger': 'log'
 }
 
 sac_default = AgentPreset(sac_base_config)
 
 # classic
 
-sac_classic_hyperparameters = derive_conf(sac_base_config, {
-    # general
+sac_classic_hyperparameters = sac_default.derive_conf({
     'train_envs': 16,
     'test_envs': 100
 })
@@ -347,8 +347,7 @@ sac_classic = AgentPreset(sac_classic_hyperparameters)
 
 # simple
 
-sac_simple_hyperparameters = derive_conf(sac_base_config, {
-    # general
+sac_simple_hyperparameters = sac_default.derive_conf({
     'test_envs': 5
 })
 
@@ -356,7 +355,7 @@ sac_simple = AgentPreset(sac_simple_hyperparameters)
 
 # pybullet
 
-sac_pybullet_hyperparameters = derive_conf(sac_base_config, {
+sac_pybullet_hyperparameters = sac_default.derive_conf({
     # sac
     'actor': dict(model=MLP, hidden_sizes=[256, 256]),
     'actor_optim': dict(lr=1e-3),

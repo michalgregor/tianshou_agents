@@ -1,8 +1,7 @@
 import time
 from .component import Component
-from .replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
+from .replay_buffer import BaseReplayBufferComponent
 from .env import setup_envs, extract_shape
-from ..utils import construct_config_object
 from tianshou.data import (
     Collector, VectorReplayBuffer, ReplayBuffer, CachedReplayBuffer,
     ReplayBufferManager, Batch, to_numpy
@@ -29,7 +28,7 @@ class CollectorComponent(BaseCollectorComponent):
         agent: 'ComponentAgent',
         device: Optional[Union[str, int, torch.device]] = None,
         seed: Optional[int] = None,
-        component_replay_buffer: Optional[Union[
+        replay_buffer: Optional[Union[
             int,
             ReplayBuffer,
             BaseReplayBufferComponent,
@@ -76,10 +75,9 @@ class CollectorComponent(BaseCollectorComponent):
 
             # constructs the replay buffer component if necessary
             if agent.component_replay_buffer is None:
-                agent.component_replay_buffer = construct_config_object(
-                    component_replay_buffer, ReplayBufferComponent,
-                    default_obj_constructor=ReplayBufferComponent,
-                    obj_kwargs=dict(
+                agent.component_replay_buffer = agent.config_router.replay_buffer_builder(
+                    config=replay_buffer,
+                    default_kwargs=dict(
                         agent=agent,
                         device=device,
                         seed=seed,
@@ -93,7 +91,7 @@ class CollectorComponent(BaseCollectorComponent):
                 env=env,
                 # note: buffer is None for the test collector
                 buffer=agent.component_replay_buffer.replay_buffer
-                    if not component_replay_buffer is None else None,
+                    if not replay_buffer is None else None,
                 **kwargs
             )
 

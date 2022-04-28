@@ -25,7 +25,7 @@ class TestPassiveCollector(unittest.TestCase):
 
     def testCollection(self):
         agent = sac_simple(
-            'Pendulum-v0', stop_criterion=-250, seed=0, train_envs=5,
+            'Pendulum-v1', stop_criterion=-250, seed=0, train_envs=5,
             train_env_class=DummyVectorEnv
         )
 

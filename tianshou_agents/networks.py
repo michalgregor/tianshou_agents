@@ -1,5 +1,5 @@
 from tianshou.utils.net.common import MLP
-from .utils import construct_config_object
+from .utils import ConfigBuilder
 from typing import Any, Dict, List, Tuple, Union, Optional, Sequence, Callable
 from numbers import Number
 from torch import nn
@@ -9,6 +9,12 @@ import torch
 RLNetworkDataType = Union[np.ndarray, torch.Tensor]
 
 class RLNetwork(nn.Module):
+    model_builder = ConfigBuilder(
+        obj_type=nn.Module,
+        default_obj_constructor=MLP,
+        none_as_default=True
+    )
+
     def __init__(
         self,
         observation_shape: Union[int, Tuple[int], List[Tuple[int]]],
@@ -57,15 +63,13 @@ class RLNetwork(nn.Module):
         else:
             output_dim = action_dim
 
-        self.model = construct_config_object(
-            model, nn.Module,
-            default_obj_constructor=MLP,
-            obj_kwargs=dict(model_kwargs,
+        self.model = self.model_builder(
+            model,
+            default_kwargs=dict(model_kwargs,
                 input_dim=input_dim,
                 output_dim=output_dim,
                 device=device
             ),
-            none_as_default=True
         ).to(device)
 
         if output_dim > 0:

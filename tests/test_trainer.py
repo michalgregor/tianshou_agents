@@ -19,16 +19,16 @@ tqdm.__init__ = partialmethod(tqdm.__init__, file=open(os.devnull, 'w'))
 class TestComponentAgent(unittest.TestCase):
     def setUp(self):
         self.agent = ComponentAgent(
-            component_replay_buffer=10,
-            component_train_collector={
+            replay_buffer=10,
+            train_collector={
                 'envs': 1,
                 'task_name': 'LunarLander-v2'
             },
-            component_test_collector={
+            test_collector={
                 'envs': 1,
                 'task_name': 'LunarLander-v2'
             },
-            component_policy={
+            policy={
                 '__type__': DQNPolicyComponent,
                 'qnetwork': dict(
                     model=MLP,
@@ -41,8 +41,8 @@ class TestComponentAgent(unittest.TestCase):
                 'max_epoch': 2,
                 'step_per_epoch': 3,
             },
-            component_logger='log',
-            component_trainer={
+            logger='log',
+            trainer={
                 'component_class': OffpolicyTrainer,
                 'max_epoch': 2,
                 'step_per_epoch': 3,

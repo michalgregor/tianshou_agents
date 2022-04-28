@@ -1,11 +1,14 @@
-from typing import Type
-from ..agent import ComponentAgent, Agent
+from typing import Type, Optional
+from ..agent import ComponentAgent
+from ..utils import derive_conf
+from ..utils.config_router import BaseConfigRouter, DefaultConfigRouter
 
 class AgentPreset:
     def __init__(
         self,
         default_params: dict,
-        agent_class: Type[ComponentAgent] = Agent,
+        agent_class: Type[ComponentAgent] = ComponentAgent,
+        config_router: Optional[BaseConfigRouter] = None
     ):
         """The class used to construct presets.
 
@@ -17,17 +20,22 @@ class AgentPreset:
         To see more info about the parameters, consult the docstring of
         ``self.agent_class``.
         """
-        self.default_params = default_params
+        self.config_router = config_router or DefaultConfigRouter()
+        self._default_params = default_params
         self.agent_class = agent_class
-
-    def __call__(self, *args, **kwargs):
+        
+    def __call__(self, task_name, **kwargs):
         """Creates an instance of the agent, intialized using the default
         arguments from this preset, updated using the keyword arguments
         passed through this call.
         """
-        params = self.default_params.copy()
-        params.update(kwargs)
-        return self.agent_class(*args, **params)
+        params = dict(self._default_params, **kwargs, task_name=task_name)
+        params = self.config_router(**params)
+        return self.agent_class(config_router=self.config_router, **params)
+
+    def derive_conf(self, update_conf=None):
+        params = self.config_router(**self._default_params)
+        return derive_conf(params, update_conf)
 
 class AgentPresetWrapper(AgentPreset):
     def __init__(self, preset):

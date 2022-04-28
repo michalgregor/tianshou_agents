@@ -63,5 +63,5 @@ class TestAgentCheckpointMixin:
         self.assertEqual(agent.train_callbacks[0].state, 5)
 
 class TestCheckpointSAC(TestAgentCheckpointMixin, unittest.TestCase):
-    TaskName = 'Pendulum-v0'
+    TaskName = 'Pendulum-v1'
     AgentPreset = sac_simple

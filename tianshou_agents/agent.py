@@ -1,18 +1,17 @@
-from .utils import StateDictObject, construct_config_object
-from .components.replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
-from .components.collector import CollectorComponent, PassiveCollector, Batch, DummyCollector
+from .utils.state_dict import StateDictObject
+from .utils.config_router import DefaultConfigRouter, BaseConfigRouter
+from .components.replay_buffer import BaseReplayBufferComponent
+from .components.collector import CollectorComponent, PassiveCollector, Batch
 from .components.policy import BasePolicyComponent
 from .components.logger import LoggerComponent
-from .components.trainer import TrainerComponent, CallbackType, StepWiseTrainer
+from .components.trainer import TrainerComponent, StepWiseTrainer
 from tianshou.data import ReplayBuffer, Collector
 from tianshou.policy import BasePolicy
 from tianshou.trainer import BaseTrainer
-from tianshou.env import BaseVectorEnv
 from tianshou.utils.logger.base import BaseLogger
 from .components.env import extract_shape
 
-from typing import Optional, Union, Callable, Dict, Any, List, Type, Tuple
-from functools import partial
+from typing import Optional, Union, Callable, Dict, Any, List, Tuple
 import numpy as np
 import warnings
 import torch
@@ -116,122 +115,135 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         - logger: the component that logs the training progress;
         - trainer: the component that trains the policy.
 
+    For convenience, some arguments can also be passed as agent-level arguments,
+    which will be automatically routed to the individual components. For info
+    about these arguments, see the DefaultConfigRouter class – or any other
+    config router that you are using in its place. Note that the config
+    router is usually supplied by the agent preset.
+    
     Args:
-        component_replay_buffer (Union[
+        replay_buffer (Union[
             int,
             ReplayBuffer,
-            BaseReplayBufferComponent,
-            Callable[..., BaseReplayBufferComponent],
-            Dict[str, Any]
-        ]): The replay buffer component in a spec for construct_config_object.
+            Callable[[int], ReplayBuffer]
+        ], optional):
+            The replay buffer to be used for experience collection as 
+            a ConfigBuilder spec. Note that in Tianshou replay buffers are
+            used by both offline and online methods. The replay buffer spec
+            can be one of:
+                * int: the size of the replay buffer;
+                * a replay buffer instance;
+                * a BaseReplayBufferComponent instance;
+                * a callable that takes creates a BaseReplayBufferComponent;
+                * a config dictionary in the ConfigBuilder format;
 
-        component_train_collector (Union[
+        train_collector (Union[
             Collector,
             CollectorComponent,
             Callable[..., CollectorComponent],
             Dict[str, Any]
-        ]) The train collector component in a spec for construct_config_object.
+        ]):
+            The component responsible for setting up the training collector
+            as a ConfigBuilder spec. See CollectorComponent and agent presets
+            for more details about the arguments and ways to construct
+            collectors.
 
-        component_test_collector (Union[
+        test_collector (Union[
             Collector,
             CollectorComponent,
             Callable[..., CollectorComponent],
             Dict[str, Any]
-        ]) The test collector component in a spec for construct_config_object.
+        ]):
+            The component responsible for setting up the test collector
+            as a ConfigBuilder spec. See CollectorComponent and agent presets
+            for more details about the arguments and ways to construct
+            collectors.
 
-        component_policy (Union[
+        policy (Union[
             BasePolicy,
             BasePolicyComponent,
             Callable[..., BasePolicyComponent],
             Dict[str, Any]
-        ]) The policy component in a spec for construct_config_object.
+        ]):
+            The component responsible for setting up the policy as a 
+            ConfigBuilder spec. See agent presets for more details about the
+            arguments and ways to construct policies.
 
-        component_logger (Union[
+        logger (Union[
             str,
             BaseLogger,
             LoggerComponent,
             Callable[..., LoggerComponent],
-            Dict[str, Any]
-        ]) The logger component in a spec for construct_config_object.
+            Dict[str, Any], 
+        ], optional):
+            The component responsible for setting up logging as a 
+            ConfigBuilder spec.
+            
+            If a string is passed, it is interpreted as log_dir: the directory
+            that logs should go under. A log_path (the full path to the logs)
+            is constructed by appending the name of the environment and the
+            name of the agent to it as subdirectories.
 
-        component_trainer (Union[
+            An empty dict is interpreted as log_dir = 'log'.
+
+        trainer (Union[
             TrainerComponent,
             Callable[..., TrainerComponent],
             Dict[str, Any]
-        ]) The trainer component in a spec for construct_config_object.
+        ]):
+            The component responsible for setting up the trainer as a
+            ConfigBuilder spec. See TrainerComponent and agent presets for more
+            details about the arguments and ways to construct trainers.
 
         device (Union[str, int, torch.device], optional): The PyTorch device
             to be used by PyTorch tensors and networks.
+
         seed (int, optional): The numeric seed used to seed the random
                 number generators (``np.random``, ``torch.manual_seed``,
                 ``train_envs.seed``, ``test_envs.seed``). Defaults to ``None``
                 in which case no seeding is done.
-
-        replay_buffer_kwargs (dict, optional): Additional keyword arguments to
-            be passed to construct_config_object when constructing the replay
-            buffer component.
-        train_collector_kwargs (dict, optional): Additional keyword arguments to
-            be passed to construct_config_object when constructing the train
-            collector component.
-        test_collector_kwargs (dict, optional): Additional keyword arguments to
-            be passed to construct_config_object when constructing the test
-            collector component.
-        policy_kwargs (dict, optional): Additional keyword arguments to be
-            passed to construct_config_object when constructing the policy
-            component.
-        logger_kwargs (dict, optional): Additional keyword arguments to be
-            passed to construct_config_object when constructing the logger
-            component.
-        trainer_kwargs (dict, optional): Additional keyword arguments to be
-            passed to construct_config_object when constructing the trainer
-            component.
     """
     def __init__(self,
-        component_replay_buffer: Union[
+        replay_buffer: Union[
             int,
             ReplayBuffer,
             BaseReplayBufferComponent,
             Callable[..., BaseReplayBufferComponent],
             Dict[str, Any]
         ],
-        component_train_collector: Union[
+        train_collector: Union[
             Collector,
             CollectorComponent,
             Callable[..., CollectorComponent],
             Dict[str, Any]
         ],
-        component_test_collector: Union[
+        test_collector: Union[
             Collector,
             CollectorComponent,
             Callable[..., CollectorComponent],
             Dict[str, Any]
         ],
-        component_policy: Union[
+        policy: Union[
             BasePolicy,
             BasePolicyComponent,
             Callable[..., BasePolicyComponent],
             Dict[str, Any]
         ],
-        component_logger: Union[
+        logger: Union[
             str,
             BaseLogger,
             LoggerComponent,
             Callable[..., LoggerComponent],
             Dict[str, Any]
         ],
-        component_trainer: Union[
+        trainer: Union[
             TrainerComponent,
             Callable[..., TrainerComponent],
             Dict[str, Any]
         ],
         device: Optional[Union[str, int, torch.device]] = None,
         seed: Optional[int] = None,
-        replay_buffer_kwargs: Optional[dict] = None,
-        train_collector_kwargs: Optional[dict] = None,
-        test_collector_kwargs: Optional[dict] = None,
-        policy_kwargs: Optional[dict] = None,
-        logger_kwargs: Optional[dict] = None,
-        trainer_kwargs: Optional[dict] = None,
+        config_router: Optional[BaseConfigRouter] = None
     ):
         super().__init__()
 
@@ -245,20 +257,15 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         ])
 
         self._construct_agent(
-            component_replay_buffer=component_replay_buffer,
-            component_train_collector=component_train_collector,
-            component_test_collector=component_test_collector,
-            component_policy=component_policy,
-            component_logger=component_logger,
-            component_trainer=component_trainer,
+            replay_buffer=replay_buffer,
+            train_collector=train_collector,
+            test_collector=test_collector,
+            policy=policy,
+            logger=logger,
+            trainer=trainer,
             device=device,
             seed=seed,
-            replay_buffer_kwargs=replay_buffer_kwargs,
-            train_collector_kwargs=train_collector_kwargs,
-            test_collector_kwargs=test_collector_kwargs,
-            policy_kwargs=policy_kwargs,
-            logger_kwargs=logger_kwargs,
-            trainer_kwargs=trainer_kwargs,
+            config_router=config_router
        )
 
     def apply_seed(self, seed):
@@ -267,19 +274,10 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             torch.manual_seed(seed)
 
     def _construct_agent(
-       self, component_replay_buffer,
-       component_train_collector, component_test_collector,
-       component_policy, component_logger, component_trainer,
-       device, seed, replay_buffer_kwargs, train_collector_kwargs,
-       test_collector_kwargs, policy_kwargs, logger_kwargs, trainer_kwargs
+       self, replay_buffer, train_collector, test_collector,
+       policy, logger, trainer, device, seed, config_router
     ):
-        # create new empty dicts where necessary
-        if replay_buffer_kwargs is None: replay_buffer_kwargs = {}
-        if train_collector_kwargs is None: train_collector_kwargs = {}
-        if test_collector_kwargs is None: test_collector_kwargs = {}
-        if policy_kwargs is None: policy_kwargs = {}
-        if logger_kwargs is None: logger_kwargs = {}
-        if trainer_kwargs is None: trainer_kwargs = {}
+        self.config_router = config_router or DefaultConfigRouter()
 
         # set up attributes for all the components
         self.component_replay_buffer = None
@@ -305,33 +303,30 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         self.apply_seed(seed)
 
         # construct the trainer component
-        self.component_trainer = construct_config_object(
-            component_trainer, TrainerComponent,
-            default_obj_constructor=TrainerComponent,
-            obj_kwargs=dict(trainer_kwargs,
+        self.component_trainer = self.config_router.trainer_builder(
+            trainer,
+            default_kwargs=dict(
                 agent=self,
                 device=device,
                 seed=seed
             )
         )
-
+        
         # construct the train collector
-        self.component_train_collector = construct_config_object(
-            component_train_collector, CollectorComponent,
-            default_obj_constructor=CollectorComponent,
-            obj_kwargs=dict(train_collector_kwargs,
+        self.component_train_collector = self.config_router.collector_builder(
+            train_collector,
+            default_kwargs=dict(
                 agent=self,
                 device=device,
                 seed=seed,
-                component_replay_buffer=component_replay_buffer
+                replay_buffer=replay_buffer
             )
         )
 
         # construct the test collector
-        self.component_test_collector = construct_config_object(
-            component_test_collector, CollectorComponent,
-            default_obj_constructor=CollectorComponent,
-            obj_kwargs=dict(test_collector_kwargs,
+        self.component_test_collector = self.config_router.collector_builder(
+            test_collector,
+            default_kwargs=dict(
                 agent=self,
                 device=device,
                 seed=seed
@@ -341,10 +336,9 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         # we only construct the replay buffer here if it was not already
         # constructed by the train collector
         if self.component_replay_buffer is None:
-            self.component_replay_buffer = construct_config_object(
-                component_replay_buffer, ReplayBufferComponent,
-                default_obj_constructor=ReplayBufferComponent,
-                obj_kwargs=dict(replay_buffer_kwargs,
+            self.component_replay_buffer = self.config_router.replay_buffer_builder(
+                replay_buffer,
+                default_kwargs=dict(
                     agent=self,
                     device=device,
                     seed=seed
@@ -352,9 +346,9 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             )
             
         # construct the policy
-        self.component_policy = construct_config_object(
-            component_policy, BasePolicyComponent,
-            obj_kwargs=dict(policy_kwargs,
+        self.component_policy = self.config_router.policy_builder(
+            policy,
+            default_kwargs=dict(
                 agent=self,
                 device=device,
                 seed=seed
@@ -362,10 +356,9 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         )
         
         # construct the logger
-        self.component_logger = construct_config_object(
-            component_logger, LoggerComponent,
-            default_obj_constructor=LoggerComponent,
-            obj_kwargs=dict(logger_kwargs,
+        self.component_logger = self.config_router.logger_builder(
+            logger,
+            default_kwargs=dict(
                 agent=self,
                 device=device,
                 seed=seed
@@ -747,534 +740,3 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
                     next(passive_trainer)
                 except StopIteration:
                     raise StopIteration("The passive trainer has stopped.")
-            
-class Agent(ComponentAgent):
-    """An agent class built upon ComponentAgent: it only adds convenient
-    agent-level arguments for some component parameters.
-
-    Args:
-        task_name (str): The name of the ``gym`` environment; by default,
-            environments are constructed using ``gym.make``. To override
-            this behaviour, supply a ``task`` argument: a callable that
-            constructs your ``gym`` environment.
-        max_epoch (int, optional): The maximum number of epochs for training.
-            The training process might be finished before reaching
-            ``max_epoch`` if the stop criterion returns ``True``; this
-            behaviour can be overriden using the ``stop_criterion`` argument.
-        train_envs (Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv], optional):
-            A spec used to construct training environments. One of:
-                * None;
-                * The number of environments to construct;
-                * A list of Gym environments / callables that construct
-                  Gym environments;
-                * A BaseVectorEnv instance.
-            When the environments are constructed automatically, it is using
-            the class specified through the train_env_class argument.
-        test_envs (Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv], optional):
-            A spec used to construct testing environments. One of:
-                * None;
-                * The number of environments to construct;
-                * A list of Gym environments / callables that construct
-                  Gym environments;
-                * A BaseVectorEnv instance.
-            When the environments are constructed automatically, it is using
-            the class specified through the train_env_class argument.
-        replay_buffer (Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]], optional):
-            The replay buffer to be used for experience collection. Note
-            that in Tianshou replay buffers are used by both offline and
-            online methods. The replay beffue spec can be one of:
-                * int: the size of the replay buffer;
-                * a replay buffer instance;
-                * a BaseReplayBufferComponent instance;
-                * a callable that takes creates a BaseReplayBufferComponent;
-                * a config dictionary in the construct_config_object format;
-        step_per_epoch (int, optional): The number of transitions collected
-            per epoch.
-        step_per_collect (int, optional): The number of transitions a collector
-            would collect before the network update, i.e., trainer will
-            collect ``step_per_collect`` transitions and do some policy
-            network update repeatly in each epoch. Defaults to ``None``, 
-            which means that ``step_per_collect`` is the same as the
-            number of training environments.
-        update_per_collect (float, optional): The number of times the policy
-            network will be updated for each collect (collection of
-            experience from the environments). If update_per_step is
-            specified, it overrides this argument. Defaults to 1.
-        update_per_step (float, optional): The number of times the policy
-            network would be updated per transition after (step_per_collect)
-            transitions are collected, e.g., if update_per_step set to 0.3,
-            and step_per_collect is 256, policy will be updated
-            round(256 * 0.3 = 76.8) = 77 times after 256 transitions are
-            collected by the collector. If None (default), it is calculated
-            automatically from update_per_collect.
-        exploration_noise_train (bool, optional): Determines whether, during
-            training, the action needs to be modified with the corresponding
-            policy's exploration noise. If so, ``policy.exploration_noise(act, batch)``
-            will be called automatically to add the exploration noise into the action.
-            This is only used unless a pre-constructed collector is supplied.
-        exploration_noise_test (bool, optional): Determines whether, during
-            testing, the action needs to be modified with the corresponding
-            policy's exploration noise. If so, ``policy.exploration_noise(act, batch)``
-            will be called automatically to add the exploration noise into the action.
-            This is only used unless a pre-constructed collector is supplied.
-        episode_per_test (int, optional): The number of episodes for one
-            policy evaluation.
-        train_env_class (Type[BaseVectorEnv], optional): The vector environment
-            used to represent the collection of training environments. See
-            also ``train_envs``.
-        test_env_class (Type[BaseVectorEnv], optional): The vector environment
-            used to represent the collection of testing environments. See
-            also ``test_envs``.
-        logger (Union[str, BaseLogger, LoggerComponent, Callable[...,   
-            LoggerComponent], Dict[str, Any], ], optional): The logger to use.
-            The spec is passed to construct_config_object.
-            
-            If a string is passed, it is interpreted as log_dir: the directory
-            that logs should go under. A log_path (the full path to the logs)
-            is constructed by appending the name of the environment and the
-            name of the agent to it as subdirectories.
-
-            None is interpreted as log_dir = 'log'.
-
-        task (Callable[[], gym.Env], optional): A callable used to
-            construct training and testing environments. Defaults to None
-            in which case evironments are constructed using
-            gym.make(task_name).
-        test_task (Callable[[], gym.Env], optional): A callable used to
-            construct testing environments. Defaults to None in which
-            case testing environments are constructed in the same way
-            as training environments.
-
-        train_callbacks (Union[
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ], optional): A list of callbacks invoked at the beginning of each
-            training step. The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
-
-            Optionally, save callbacks can be constructed using
-            a construct_config_object spec.
-
-        test_callbacks (Union[
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ], optional): A list of callbacks invoked at the beginning of each
-            testing step. The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
-
-            Optionally, save callbacks can be constructed using
-            a construct_config_object spec.
-
-        save_best_callbacks (Union[
-            str,
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ], optional): A list of callbacks invoked every time the undiscounted
-            average mean reward in evaluation phase gets better.
-
-            The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
-
-            Optionally, a callback can be constructed automatically using
-            a construct_config_object spec.
-            
-            In that case a string other than 'auto' is interpreted as
-            specifying the log_path argument.
-
-            If log_path is not specified in this way or through the dict
-            argument, the trainer will try to use the log_path from the logger, 
-            if available.
-
-        save_checkpoint_callbacks (Union[
-            str,
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ], optional): A list of callbacks invoked after every step of training.
-
-            The signature of the callbacks is
-            ``f(epoch: int, env_step: int, gradient_step: int, agent: Agent) -> None``.
-
-            Optionally, a save callback can be constructed automatically using
-            a construct_config_object spec. Unless otherwise specified, the
-            interval is going to default to max(int(self.max_epoch / 10), 1)
-            if max_epoch is specified and to 1 otherwise.
-
-            If a callback is being constructed automatically, a string other
-            than 'auto' is interpreted as specifying the log_path argument.
-
-            If log_path is not specified in this way or through the dict
-            argument, the trainer will try to use the log_path from the logger, 
-            if available.
-            
-        stop_criterion (
-            Union[
-                bool,
-                str,
-                Callable[[float, Union[float, None], 'ComponentAgent'], float]
-            ], optional
-        ):
-            The criterion used to stop training before ``max_epoch`` has
-            been reached:
-                * If set to ``True``, training stops once the
-                    mean test reward from the previous collect reaches the
-                    environment's reward threshold;
-                * If set to ``False``, the stop criterion is disabled;
-                * If a float, training stops once the mean test reward
-                    from the previous collect reaches ``stop_criterion``.
-                * If set to ``callable(mean_rewards, reward_threshold, agent)``,
-                    the callable is used to determine whether training should
-                    be stopped or not; mean_rewards is the mean test reward
-                    from the previous collect.
-
-        verbose (bool): whether to print information when training.
-            Defaults to True.
-
-        component_replay_buffer (Union[int, ReplayBuffer, Callable[[int], ReplayBuffer]], optional):
-            This is the same as replay_buffer (when component_replay_buffer
-            is specified, it is used in place of replay_buffer and the value
-            of replay_buffer is ignored).
-
-        component_train_collector (Union[
-            Collector,
-            CollectorComponent,
-            Callable[..., CollectorComponent],
-            Dict[str, Any]
-        ]):
-            The component responsible for setting up the training collector.
-            See CollectorComponent and agent presets for more details about
-            the arguments and ways to construct collectors.
-
-        component_test_collector (Union[
-            Collector,
-            CollectorComponent,
-            Callable[..., CollectorComponent],
-            Dict[str, Any]
-        ]):
-            The component responsible for setting up the testing collector.
-            See CollectorComponent and agent presets for more details about
-            the arguments and ways to construct collectors.
-
-        component_policy (Union[
-            Union[
-            BasePolicy,
-            BasePolicyComponent,
-            Callable[..., BasePolicyComponent],
-            Dict[str, Any]
-        ]):
-            The component responsible for setting up the policy. See
-            agent presets for more details about the arguments and ways to construct policies.
-        
-        component_logger (Union[
-            str,
-            BaseLogger,
-            LoggerComponent,
-            Callable[..., LoggerComponent],
-            Dict[str, Any]
-        ]):
-            This is the same as logger (when component_logger is specified,
-             it is used in place of logger and the value of logger is ignored).
-
-        component_trainer (Union[
-            TrainerComponent,
-            Callable[..., TrainerComponent],
-            Dict[str, Any]
-        ]):
-            The component responsible for setting up the trainer. See
-            TrainerComponent and agent presets for more details about the
-            arguments and ways to construct trainers.
-
-        reward_metric: a function with signature
-            ``f(rewards: np.ndarray with shape (num_episode, agent_num)) -> np.ndarray
-            with shape (num_episode,)``, used in multi-agent RL. We need to return a
-            single scalar for each episode's result to monitor training in the
-            multi-agent RL setting. This function specifies what is the desired metric,
-            e.g., the reward of agent 1 or the average reward over all agents.
-
-        batch_size (int): The batch size of sample data, which is going to
-            feed in the policy network.
-
-        repeat_per_collect (int, optional): The number of repeat time for
-            policy learning, for example, set it to 2 means the policy needs
-            to learn each given batch data twice.
-        
-        update_per_epoch  The number of policy network updates,
-            so-called gradient steps, per epoch.
-
-        episode_per_collect (int, optional): The number of episodes the
-            collector would collect before the network update, i.e., trainer
-            will collect "episode_per_collect" episodes and do some policy
-            network update repeatedly in each epoch.
-
-        test_in_train (bool): Whether to test in the training phase.
-
-        device (Union[str, int, torch.device], optional): The PyTorch device
-            to be used by PyTorch tensors and networks.
-
-        seed (int, optional): The numeric seed used to seed the random
-            number generators (``np.random``, ``torch.manual_seed``,
-            ``train_envs.seed``, ``test_envs.seed``). Defaults to ``None``
-            in which case no seeding is done.
-
-        replay_buffer_kwargs (dict, optional): Additional keyword arguments to
-            be passed to construct_config_object when constructing the replay
-            buffer component.
-        train_collector_kwargs (dict, optional): Additional keyword arguments to
-            be passed to construct_config_object when constructing the train
-            collector component.
-        test_collector_kwargs (dict, optional): Additional keyword arguments to
-            be passed to construct_config_object when constructing the test
-            collector component.
-        policy_kwargs (dict, optional): Additional keyword arguments to be
-            passed to construct_config_object when constructing the policy
-            component.
-        logger_kwargs (dict, optional): Additional keyword arguments to be
-            passed to construct_config_object when constructing the logger
-            component.
-        trainer_kwargs (dict, optional): Additional keyword arguments to be
-            passed to construct_config_object when constructing the trainer
-            component.
-
-        Any additional keyword arguments are passed to the policy
-        construction method (``_setup_policy(self, **kwargs)``).
-    """
-    def __init__(self,
-        task_name: str,
-        max_epoch: int = 10,
-        train_envs: Optional[Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv]] = None,
-        test_envs: Optional[Union[int, List[Union[gym.Env, Callable[[], gym.Env]]], BaseVectorEnv]] = None,
-        replay_buffer: Union[
-            int,
-            ReplayBuffer,
-            BaseReplayBufferComponent,
-            Callable[..., BaseReplayBufferComponent],
-            Dict[str, Any]
-        ] = 1000000,
-        step_per_epoch: int = 10000,
-        step_per_collect: Optional[int] = None,
-        update_per_collect: Optional[float] = 1.,
-        update_per_step: Optional[float] = None,
-        exploration_noise_train: bool = True,
-        exploration_noise_test: bool = True,
-        episode_per_test: Optional[int] = None,
-        train_env_class: Optional[Type[BaseVectorEnv]] = None,
-        test_env_class: Optional[Type[BaseVectorEnv]] = None,
-        logger: Union[
-            str,
-            BaseLogger,
-            LoggerComponent,
-            Callable[..., LoggerComponent],
-            Dict[str, Any]
-        ] = 'auto',
-        task: Optional[Callable[[], gym.Env]] = None,
-        test_task: Optional[Callable[[], gym.Env]] = None,
-        train_callbacks: Optional[Union[
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ]] = None,
-        test_callbacks: Optional[Union[
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ]] = None,
-        save_best_callbacks: Optional[Union[
-            str,
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ]] = None,
-        save_checkpoint_callbacks: Optional[Union[
-            str,
-            List[CallbackType],
-            Callable[..., Union[CallbackType, List[CallbackType]]],
-            Dict[str, Any]
-        ]] = None,
-        stop_criterion: Optional[
-            Union[
-                bool,
-                str,
-                Callable[[float, Union[float, None], 'ComponentAgent'], float]
-            ]
-        ] = None,
-        verbose: bool = True,
-        component_replay_buffer: Union[
-            int,
-            ReplayBuffer,
-            BaseReplayBufferComponent,
-            Callable[..., BaseReplayBufferComponent],
-            Dict[str, Any]
-        ] = None,
-        component_train_collector: Union[
-            Collector,
-            CollectorComponent,
-            Callable[..., CollectorComponent],
-            Dict[str, Any]
-        ] = None,
-        component_test_collector: Union[
-            Collector,
-            CollectorComponent,
-            Callable[..., CollectorComponent],
-            Dict[str, Any]
-        ] = None,
-        component_policy: Union[
-            BasePolicy,
-            BasePolicyComponent,
-            Callable[..., BasePolicyComponent],
-            Dict[str, Any]
-        ] = None,
-        component_logger: Union[
-            str,
-            BaseLogger,
-            LoggerComponent,
-            Callable[..., LoggerComponent],
-            Dict[str, Any]
-        ] = None,
-        component_trainer: Union[
-            TrainerComponent,
-            Callable[..., TrainerComponent],
-            Dict[str, Any]
-        ] = None,
-        reward_metric: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-        batch_size: int = 128,
-        repeat_per_collect: Optional[int] = None,
-        update_per_epoch: Optional[int] = None,
-        episode_per_collect: Optional[int] = None,
-        test_in_train: bool = False,
-        prefill_steps: int = 0,
-        resume_from_log: bool = True,
-        reward_threshold: Optional[float] = None,
-        device: Optional[Union[str, int, torch.device]] = None,
-        seed: Optional[int] = None,
-        train_collector: Union[
-            Collector,
-            CollectorComponent,
-            Callable[..., CollectorComponent],
-            Dict[str, Any]
-        ] = None,
-        test_collector: Union[
-            Collector,
-            CollectorComponent,
-            Callable[..., CollectorComponent],
-            Dict[str, Any]
-        ] = None,
-        replay_buffer_kwargs: Optional[dict] = None,
-        train_collector_kwargs: Optional[dict] = None,
-        test_collector_kwargs: Optional[dict] = None,
-        policy_kwargs: Optional[dict] = None,
-        logger_kwargs: Optional[dict] = None,
-        trainer_kwargs: Optional[dict] = None,
-        **kwargs
-    ):
-        # create new empty dicts where necessary
-        if replay_buffer_kwargs is None: replay_buffer_kwargs = {}
-        if train_collector_kwargs is None: train_collector_kwargs = {}
-        if test_collector_kwargs is None: test_collector_kwargs = {}
-        if policy_kwargs is None: policy_kwargs = {}
-        if logger_kwargs is None: logger_kwargs = {}
-        if trainer_kwargs is None: trainer_kwargs = {}
-
-        # aliases
-        if component_train_collector is None:
-            component_train_collector = train_collector
-
-        if component_test_collector is None:
-            component_test_collector = test_collector
-
-        # resolve env constructors
-        train_task, test_task = self._resolve_tasks(task, test_task, task_name)
-
-        # replay buffer
-        if component_replay_buffer is None:
-            component_replay_buffer = replay_buffer
-
-        replay_buffer_kwargs = dict(dict(), **replay_buffer_kwargs)
-
-        # train collector
-        train_collector_kwargs = dict(dict(
-            task_name=task_name,
-            task=train_task,
-            env=train_envs,
-            exploration_noise=exploration_noise_train,
-            env_class=train_env_class,
-
-        ), **train_collector_kwargs)
-
-        # test collector
-        test_collector_kwargs = dict(dict(
-            task_name=task_name,
-            task=test_task,
-            env=test_envs,
-            exploration_noise=exploration_noise_test,
-            env_class=test_env_class
-
-        ), **test_collector_kwargs)
-
-        # policy
-        policy_kwargs = dict(dict(
-            max_epoch=max_epoch,
-        ), **policy_kwargs)
-        
-        policy_kwargs.update(kwargs)
-        
-        # logger
-        if component_logger is None:
-            component_logger = logger
-
-        logger_kwargs = dict(dict(
-            task_name=task_name
-        ), **logger_kwargs)
-
-        # trainer
-        trainer_kwargs = dict(dict(
-            max_epoch=max_epoch,
-            step_per_epoch=step_per_epoch,
-            step_per_collect=step_per_collect,
-            update_per_collect=update_per_collect,
-            update_per_step=update_per_step,
-            episode_per_test=episode_per_test,
-            train_callbacks=train_callbacks,
-            test_callbacks=test_callbacks,
-            save_best_callbacks=save_best_callbacks,
-            save_checkpoint_callbacks=save_checkpoint_callbacks,
-            stop_criterion=stop_criterion,
-            verbose=verbose,
-            reward_metric=reward_metric,
-            batch_size=batch_size,
-            repeat_per_collect=repeat_per_collect,
-            update_per_epoch=update_per_epoch,
-            episode_per_collect=episode_per_collect,
-            test_in_train=test_in_train,
-            resume_from_log=resume_from_log,
-            reward_threshold=reward_threshold,
-            prefill_steps=prefill_steps
-        ), **trainer_kwargs)
-
-        super().__init__(
-            component_replay_buffer=component_replay_buffer,
-            component_train_collector=component_train_collector,
-            component_test_collector=component_test_collector,
-            component_policy=component_policy,
-            component_logger=component_logger,
-            component_trainer=component_trainer,
-            device=device,
-            seed=seed,
-            replay_buffer_kwargs=replay_buffer_kwargs,
-            train_collector_kwargs=train_collector_kwargs,
-            test_collector_kwargs=test_collector_kwargs,
-            policy_kwargs=policy_kwargs,
-            logger_kwargs=logger_kwargs,
-            trainer_kwargs=trainer_kwargs
-        )
-
-    def _resolve_tasks(self, train_task, test_task, task_name):
-        if train_task is None:
-            train_task = partial(gym.make, task_name)
-
-        if test_task is None:
-            test_task = train_task
-
-        return train_task, test_task

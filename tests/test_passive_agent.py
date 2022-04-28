@@ -18,8 +18,8 @@ class TestComponentAgent(unittest.TestCase):
 
         self.agent = dqn_simple(
             'LunarLander-v2', seed=1,
-            component_train_collector=None,
-            component_test_collector=None,
+            train_collector=None,
+            test_collector=None,
             observation_space=self.env.observation_space[0],
             action_space=self.env.action_space[0],
         )
