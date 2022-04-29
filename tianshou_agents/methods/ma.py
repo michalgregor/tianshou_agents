@@ -98,7 +98,6 @@ class MultiAgentPolicyManagerComponent(BasePolicyComponent):
 
 ma_base_config = {
     # agent
-    'task': None,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'seed': None,
     # replay buffer
@@ -108,13 +107,11 @@ ma_base_config = {
     'train_envs': 1,
     'train_env_class': None,
     'exploration_noise_train': True,
-    'train_task': None,
     # test collector
     'test_collector': {},
     'test_envs': 1,
     'test_env_class': None,
     'exploration_noise_test': True,
-    'test_task': None,
     # policy    
     'policy': MultiAgentPolicyManagerComponent,
     'policies': None, # this needs to be supplied upon 
