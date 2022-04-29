@@ -1,19 +1,15 @@
-from re import M
-from typing import Optional, Union, Callable, Dict, Any, List, Type
-from ..components.trainer import TrainerComponent, CallbackType
+from typing import Optional, Union, Callable, Dict, Any
+from ..components.trainer import TrainerComponent
 from ..components.replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
 from ..components.collector import CollectorComponent
 from ..components.policy import BasePolicyComponent
 from ..components.logger import LoggerComponent
+from ..components.passive_interface import PassiveInterface
 from tianshou.policy import BasePolicy
 from ..utils import ConfigBuilder
 from tianshou.utils.logger.base import BaseLogger
 from tianshou.data import ReplayBuffer, Collector
-from tianshou.env import BaseVectorEnv
-from functools import partial
-import numpy as np
 import torch
-import gym
 
 class BaseConfigRouter:
     """
@@ -62,6 +58,11 @@ class BaseConfigRouter:
         default_obj_constructor=TrainerComponent
     )
 
+    passive_interface_builder = ConfigBuilder(
+        obj_type=PassiveInterface,
+        default_obj_constructor=PassiveInterface
+    )
+
     def __call__(self,
         # components
         replay_buffer: Optional[Union[
@@ -101,6 +102,11 @@ class BaseConfigRouter:
             Callable[..., TrainerComponent],
             Dict[str, Any]
         ] = None,
+        passive_interface: Union[
+            PassiveInterface,
+            Callable[..., PassiveInterface],
+            Dict[str, Any]
+        ] = None,
         # agent args
         device: Optional[Union[str, int, torch.device]] = None,
         seed: Optional[int] = None
@@ -112,6 +118,7 @@ class BaseConfigRouter:
             policy=self.policy_builder.to_dict_config(policy),
             logger=self.logger_builder.to_dict_config(logger),
             trainer=self.trainer_builder.to_dict_config(trainer),
+            passive_interface=self.passive_interface_builder.to_dict_config(passive_interface),
             device=device,
             seed=seed
         )
@@ -347,50 +354,60 @@ class DefaultConfigRouter(BaseConfigRouter):
             argument, the trainer will try to use the log_path from the logger, 
             if available.
 
-            save_checkpoint_callbacks (Union[
-                str,
-                List[CallbackType],
-                Callable[..., Union[CallbackType, List[CallbackType]]],
-                Dict[str, Any]
-            ], optional): A list of callbacks invoked after every step of training.
+        save_checkpoint_callbacks (Union[
+            str,
+            List[CallbackType],
+            Callable[..., Union[CallbackType, List[CallbackType]]],
+            Dict[str, Any]
+        ], optional): A list of callbacks invoked after every step of training.
 
-                The signature of the callbacks is
-                ``f(epoch: int, env_step: int, gradient_step: int, agent: ComponentAgent) -> None``.
+            The signature of the callbacks is
+            ``f(epoch: int, env_step: int, gradient_step: int, agent: ComponentAgent) -> None``.
 
-                Optionally, a save callback can be constructed automatically using
-                a ConfigBuilder spec. Unless otherwise specified, the
-                interval is going to default to max(int(self.max_epoch / 10), 1)
-                if max_epoch is specified and to 1 otherwise.
+            Optionally, a save callback can be constructed automatically using
+            a ConfigBuilder spec. Unless otherwise specified, the
+            interval is going to default to max(int(self.max_epoch / 10), 1)
+            if max_epoch is specified and to 1 otherwise.
 
-                If a callback is being constructed automatically, a string other
-                than 'auto' is interpreted as specifying the log_path argument.
+            If a callback is being constructed automatically, a string other
+            than 'auto' is interpreted as specifying the log_path argument.
 
-                If log_path is not specified in this way or through the dict
-                argument, the trainer will try to use the log_path from the logger, 
-                if available.
+            If log_path is not specified in this way or through the dict
+            argument, the trainer will try to use the log_path from the logger, 
+            if available.
                 
-            stop_criterion (
-                Union[
-                    bool,
-                    str,
-                    Callable[[float, Union[float, None], 'ComponentAgent'], float]
-                ], optional
-            ):
-                The criterion used to stop training before ``max_epoch`` has
-                been reached:
-                    * If set to ``True``, training stops once the
-                        mean test reward from the previous collect reaches the
-                        environment's reward threshold;
-                    * If set to ``False``, the stop criterion is disabled;
-                    * If a float, training stops once the mean test reward
-                        from the previous collect reaches ``stop_criterion``.
-                    * If set to ``callable(mean_rewards, reward_threshold, agent)``,
-                        the callable is used to determine whether training should
-                        be stopped or not; mean_rewards is the mean test reward
-                        from the previous collect.
-                    
-            **policy_kwargs (Any): Any other keyword arguments are passed to
-                the policy component.
+        stop_criterion (
+            Union[
+                bool,
+                str,
+                Callable[[float, Union[float, None], 'ComponentAgent'], float]
+            ], optional
+        ):
+            The criterion used to stop training before ``max_epoch`` has
+            been reached:
+                * If set to ``True``, training stops once the
+                    mean test reward from the previous collect reaches the
+                    environment's reward threshold;
+                * If set to ``False``, the stop criterion is disabled;
+                * If a float, training stops once the mean test reward
+                    from the previous collect reaches ``stop_criterion``.
+                * If set to ``callable(mean_rewards, reward_threshold, agent)``,
+                    the callable is used to determine whether training should
+                    be stopped or not; mean_rewards is the mean test reward
+                    from the previous collect.
+
+    Agent-level args for the passive interface:
+        passive_collector: The PassiveCollector to use for collecting data
+            in passive mode.
+
+        passive_trainer: The trainer to use for training in passive mode.
+            This is an instance of BaseTrainer that is going to be wrapped
+            in a StepWiseTrainer internally.
+
+    Agent-level args for the policy:
+
+        **policy_kwargs (Any): Any other keyword arguments are passed to
+            the policy component.
     """
 
     # equivalent keys
@@ -402,6 +419,7 @@ class DefaultConfigRouter(BaseConfigRouter):
         'policy': 'policy',
         'logger': 'logger',
         'trainer': 'trainer',
+        'passive_interface': 'passive_interface',
         'device': 'device',
         'seed': 'seed'
     }
@@ -448,6 +466,10 @@ class DefaultConfigRouter(BaseConfigRouter):
             'save_checkpoint_callbacks': 'save_checkpoint_callbacks',
             'stop_criterion': 'stop_criterion',
         },
+        'passive_interface': {
+            'passive_collector': 'config_arg',
+            'passive_trainer': 'trainer',
+        },
         'logger': {
             'task_name': 'task_name',
         }
@@ -464,7 +486,8 @@ class DefaultConfigRouter(BaseConfigRouter):
             'test_collector': self.collector_builder,
             'policy': self.policy_builder,
             'logger': self.logger_builder,
-            'trainer': self.trainer_builder
+            'trainer': self.trainer_builder,
+            'passive_interface': self.passive_interface_builder,
         }
 
         # create an empty config

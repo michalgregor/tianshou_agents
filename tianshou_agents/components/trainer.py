@@ -6,11 +6,6 @@ from tianshou.trainer import BaseTrainer
 from functools import partial
 from numbers import Number
 import torch
-# for incremental trainer
-from tianshou.trainer.utils import gather_info
-from tianshou.utils import tqdm_config
-from collections import deque
-import tqdm
 
 class TrainingFinishedDummyTrainer(BaseTrainer):
     def __init__(self, *args, **kwargs):
@@ -351,16 +346,17 @@ class TrainerComponent(Component):
         if self.prefill_steps is None and not env_num is None:
             self.prefill_steps = self.batch_size * env_num
 
-    def _init(self, agent):
+    def _init(self, agent, prefill_steps=None):
         """
         Initializes the trainer.
         """
 
-        if self.init_done: return 
+        if self.init_done: return
+        if prefill_steps is None: prefill_steps = self.prefill_steps
         
         # prefill the replay buffer
-        if self.prefill_steps and not agent.train_collector is None:
-            agent.train_collector.collect(n_step=self.prefill_steps, random=True)
+        if prefill_steps and not agent.train_collector is None:
+            agent.train_collector.collect(n_step=prefill_steps, random=True)
 
         self.init_done = True
 
@@ -378,7 +374,7 @@ class TrainerComponent(Component):
             A trainer.
         """
         # run init if not done yet
-        self._init(agent)
+        self._init(agent, prefill_steps=prefill_steps)
 
         params = dict(
             policy=agent.policy,
@@ -506,131 +502,8 @@ class TrainerComponent(Component):
         for callback in self.test_callbacks:
             callback(agent.epoch, agent.env_step, agent.logger.gradient_step, agent)
 
-class StepWiseTrainer:
-    def __init__(self, trainer):
-        self.trainer = trainer
-        self._inner_gen = None
+    def run_train_callbacks(self, agent):
+        self._train_fn(agent, None, None)
 
-    def __getattr__(self, name):
-        return getattr(self.trainer, name)
-
-    def __dir__(self):
-        d = set(self.trainer.__dir__())
-        d.update(set(super().__dir__()))
-        return d
-
-    def __iter__(self):  # type: ignore
-        self.trainer.reset()
-        return self
-
-    def _next_gen(self):
-        """Perform one epoch (both train and eval)."""
-        trainer = self.trainer
-
-        trainer.epoch += 1
-        trainer.iter_num += 1
-
-        if trainer.iter_num > 1:
-
-            # iterator exhaustion check
-            if trainer.epoch >= trainer.max_epoch:
-                return True
-
-            # exit flag 1, when stop_fn succeeds in train_step or test_step
-            if trainer.stop_fn_flag:
-                return True
-
-        # set policy in train mode
-        trainer.policy.train()
-
-        epoch_stat: Dict[str, Any] = dict()
-        # perform n step_per_epoch
-        with tqdm.tqdm(
-            total=trainer.step_per_epoch, desc=f"Epoch #{trainer.epoch}", **tqdm_config
-        ) as t:
-            while t.n < t.total and not trainer.stop_fn_flag:
-                if t.n: yield
-                data: Dict[str, Any] = dict()
-                result: Dict[str, Any] = dict()
-                if trainer.train_collector is not None:
-                    data, result, trainer.stop_fn_flag = trainer.train_step()
-                    t.update(result["n/st"])
-                    if trainer.stop_fn_flag:
-                        t.set_postfix(**data)
-                        break
-                else:
-                    assert trainer.buffer, "No train_collector or buffer specified"
-                    result["n/ep"] = len(trainer.buffer)
-                    result["n/st"] = int(trainer.gradient_step)
-                    t.update()
-
-                trainer.policy_update_fn(data, result)
-                t.set_postfix(**data)
-
-            if t.n <= t.total and not trainer.stop_fn_flag:
-                t.update()
-
-        if not trainer.stop_fn_flag:
-            trainer.logger.save_data(
-                trainer.epoch, trainer.env_step, trainer.gradient_step, trainer.save_checkpoint_fn
-            )
-            # test
-            if trainer.test_collector is not None:
-                test_stat, trainer.stop_fn_flag = trainer.test_step()
-                if not trainer.is_run:
-                    epoch_stat.update(test_stat)
-
-        if not trainer.is_run:
-            epoch_stat.update({k: v.get() for k, v in trainer.stat.items()})
-            epoch_stat["gradient_step"] = trainer.gradient_step
-            epoch_stat.update(
-                {
-                    "env_step": trainer.env_step,
-                    "rew": trainer.last_rew,
-                    "len": int(trainer.last_len),
-                    "n/ep": int(result["n/ep"]),
-                    "n/st": int(result["n/st"]),
-                }
-            )
-            info = gather_info(
-                trainer.start_time, trainer.train_collector, trainer.test_collector,
-                trainer.best_reward, trainer.best_reward_std
-            )
-            return trainer.epoch, epoch_stat, info
-        else:
-            return None
-
-    def __next__(self) -> Union[None, Tuple[int, Dict[str, Any], Dict[str, Any]]]:
-        if self._inner_gen is None:
-            self._inner_gen = self._next_gen()
-
-        try:
-            ret = next(self._inner_gen)
-        except StopIteration as e:
-            self._inner_gen = None
-            ret = e.value
-
-            if isinstance(ret, bool) and ret:
-                raise StopIteration from e
-
-        return ret
-    
-    def run(self) -> Dict[str, Union[float, str]]:
-        """Consume iterator.
-
-        See itertools - recipes. Use functions that consume iterators at C speed
-        (feed the entire iterator into a zero-length deque).
-        """
-        trainer = self.trainer
-
-        try:
-            trainer.is_run = True
-            deque(self, maxlen=0)  # feed the entire iterator into a zero-length deque
-            info = gather_info(
-                trainer.start_time, trainer.train_collector, trainer.test_collector,
-                trainer.best_reward, trainer.best_reward_std
-            )
-        finally:
-            trainer.is_run = False
-
-        return info
+    def run_test_callbacks(self, agent):
+        self._test_fn(agent, None, None)

@@ -1,11 +1,12 @@
 from .utils.state_dict import StateDictObject
 from .utils.config_router import DefaultConfigRouter, BaseConfigRouter
 from .components.replay_buffer import BaseReplayBufferComponent
-from .components.collector import CollectorComponent, PassiveCollector, Batch
+from .components.collector import CollectorComponent
+from .components.passive_interface import PassiveInterface
 from .components.policy import BasePolicyComponent
 from .components.logger import LoggerComponent
-from .components.trainer import TrainerComponent, StepWiseTrainer
-from tianshou.data import ReplayBuffer, Collector
+from .components.trainer import TrainerComponent
+from tianshou.data import ReplayBuffer, Collector, Batch
 from tianshou.policy import BasePolicy
 from tianshou.trainer import BaseTrainer
 from tianshou.utils.logger.base import BaseLogger
@@ -90,6 +91,7 @@ class BasePassiveAgent(StateDictObject):
         state: Optional[Batch],
         no_grad: bool = True,
         return_info: bool = False,
+        mode: bool = 'train'
     ) -> Tuple[Batch, Batch]:
         pass
 
@@ -100,6 +102,14 @@ class BasePassiveAgent(StateDictObject):
         env_ids: Optional[Union[np.ndarray, List[int]]] = None
     ) -> None:
         pass
+
+    @abc.abstractmethod
+    def train_mode(self):
+        """Put the agent into train mode."""
+        
+    @abc.abstractmethod
+    def eval_mode(self):
+        """Put the agent into eval mode."""
 
 class ComponentAgent(BaseAgent, BasePassiveAgent):
     """
@@ -195,6 +205,15 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             ConfigBuilder spec. See TrainerComponent and agent presets for more
             details about the arguments and ways to construct trainers.
 
+        passive_interface (Union[
+            PassiveInterface,
+            Callable[..., PassiveInterface],
+            Dict[str, Any]
+        ]):
+            The component that initializes the passive training interface
+            specified as a ConfigBuilder spec. See PassiveInterface for more
+            details about the arguments.
+
         device (Union[str, int, torch.device], optional): The PyTorch device
             to be used by PyTorch tensors and networks.
 
@@ -241,6 +260,11 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             Callable[..., TrainerComponent],
             Dict[str, Any]
         ],
+        passive_interface: Union[
+            PassiveInterface,
+            Callable[..., PassiveInterface],
+            Dict[str, Any]
+        ] = None,
         device: Optional[Union[str, int, torch.device]] = None,
         seed: Optional[int] = None,
         config_router: Optional[BaseConfigRouter] = None
@@ -254,6 +278,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             'component_policy',
             'component_logger',
             'component_trainer',
+            'component_passive_interface'
         ])
 
         self._construct_agent(
@@ -263,6 +288,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             policy=policy,
             logger=logger,
             trainer=trainer,
+            passive_interface=passive_interface,
             device=device,
             seed=seed,
             config_router=config_router
@@ -275,7 +301,8 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
 
     def _construct_agent(
        self, replay_buffer, train_collector, test_collector,
-       policy, logger, trainer, device, seed, config_router
+       policy, logger, trainer, passive_interface, device, seed,
+       config_router
     ):
         self.config_router = config_router or DefaultConfigRouter()
 
@@ -287,11 +314,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         self.component_replay_buffer = None
         self.component_policy = None
         self.component_logger = None
-
-        # set up attributes for the passive agent interface
-        self._passive_collector = None
-        self._passive_trainer = None
-        self._passive_col_gen = None
+        self.component_passive_interface = None
 
         # setup the device
         if device is None:
@@ -365,6 +388,16 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             )
         )
 
+        # construct the passive interface
+        self.component_passive_interface = self.config_router.passive_interface_builder(
+            passive_interface,
+            default_kwargs=dict(
+                agent=self,
+                device=device,
+                seed=seed
+            )
+        )
+
         # run any additional component setup
         if not self.component_trainer is None:
             self.component_trainer.setup(agent=self, device=device, seed=seed)
@@ -383,6 +416,9 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
 
         if not self.component_logger is None:
             self.component_logger.setup(agent=self, device=device, seed=seed)
+
+        if not self.component_passive_interface is None:
+            self.component_passive_interface.setup(agent=self, device=device, seed=seed)
 
     # properties
     @property
@@ -404,6 +440,16 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         if getattr(self.component_trainer, 'init_done', False):
             warnings.warn("Collectors should not be set after initialization: a trainer would already have been created with the old ones.")
         self.component_test_collector.collector = collector
+
+    @property
+    def passive_collector(self):
+        if not self.component_passive_interface is None:
+            return getattr(self.component_passive_interface, 'collector', None)
+
+    @property
+    def passive_trainer(self):
+        if not self.component_passive_interface is None:
+            return getattr(self.component_passive_interface, 'trainer', None)
 
     @property
     def train_envs(self):
@@ -631,7 +677,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             test_fn = self.component_trainer._test_fn
 
         if not test_fn is None:
-            test_fn(self, self.logger.epoch, self.logger.env_step)   
+            test_fn(self, self.logger.epoch, self.logger.env_step)
 
         self.policy.eval()
 
@@ -650,49 +696,6 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             n_episode=episode_per_test, render=render, **kwargs
         )
 
-    # the passive agent interface
-    def init_passive_training(self,
-        num_envs: int = 1,
-        policy: Optional[BasePolicy] = None,
-        buffer: Optional[ReplayBuffer] = None,
-        preprocess_fn: Optional[Callable[..., Batch]] = None,
-        exploration_noise: bool = False,
-        **kwargs
-    ):
-        """Initializes the passive training. The keyword arguments (if any)
-        are used to override default trainer arguments.
-        """
-
-        if policy is None: policy = self.policy
-        if buffer is None: buffer = self.buffer
-
-        self._passive_collector = PassiveCollector(
-            policy=policy, buffer=buffer, preprocess_fn=preprocess_fn,
-            num_envs=num_envs, exploration_noise=exploration_noise,
-        )
-
-        trainer_kwargs = dict(
-            train_collector=self._passive_collector,
-            test_collector=None,
-            max_epoch=float('inf')
-        )
-
-        trainer_kwargs.update(kwargs)
-        trainer_kwargs["policy"] = policy
-        trainer_kwargs["buffer"] = buffer
-
-        self._passive_trainer = StepWiseTrainer(self.make_trainer(**trainer_kwargs))
-        self._passive_trainer = iter(self._passive_trainer)
-        self._passive_col_gen = None
-
-    def finish_passive_training(self):
-        """Finishes passive training by throwing away the passive collector
-        and trainer.
-        """
-        self._passive_collector = None
-        self._passive_trainer = None
-        self._passive_col_gen = None
-
     def act(
         self,
         obs: Union[Batch, np.ndarray, torch.Tensor],
@@ -700,8 +703,36 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         state: Optional[Batch],
         no_grad: bool = True,
         return_info: bool = False,
+        mode: bool = 'train',
+        run_callbacks: bool = True
     ) -> Tuple[Batch, Batch]:
-        return self._passive_collector.act(
+        """Calls upon the policy and returns the action along with the new
+        state of the policy (only relevant for recurrent policies).
+
+        Args:
+            obs (Union[Batch, np.ndarray, torch.Tensor]): _description_
+            done (Union[Batch, np.ndarray, torch.Tensor], optional): _description_
+            state (Batch, optional): _description_
+            no_grad (bool, optional): _description_. Defaults to True.
+            return_info (bool, optional): _description_. Defaults to False.
+            mode (bool, optional): The mode that the actor is to work in.
+                One of 'train', 'eval' / 'test'. Defaults to 'train'.
+
+        Returns:
+            Tuple[Batch, Batch]: action batch, state batch
+        """
+        if mode == 'train':
+            self.component_passive_interface.collector.policy.train()
+            if run_callbacks: self.component_trainer.run_train_callbacks(self)
+
+        elif mode == 'eval' or mode == 'test':
+            self.component_passive_interface.collector.policy.eval()
+            if run_callbacks: self.component_trainer.run_test_callbacks(self)
+
+        else:
+            raise ValueError("mode must be 'train' or 'eval' / 'test'.")
+
+        return self.component_passive_interface.collector.compute_action(
             obs=obs, done=done, state=state, no_grad=no_grad,
             return_info=return_info
         )
@@ -714,7 +745,8 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         episode_per_collect: Optional[int] = None,
         training_enabled: bool = True,
     ) -> None:
-        passive_trainer = self._passive_trainer
+        passive_trainer = self.component_passive_interface.trainer
+        passive_collector = self.component_passive_interface.collector
 
         if step_per_collect is None:
             step_per_collect = passive_trainer.step_per_collect
@@ -722,21 +754,18 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         if episode_per_collect is None:
             episode_per_collect = passive_trainer.episode_per_collect
 
-        if self._passive_col_gen is None:
-            self._passive_col_gen = self._passive_collector.make_collect(
+        if not passive_collector.is_collecting:
+            passive_collector.make_collect(
                 n_step=step_per_collect, n_episode=episode_per_collect
             )
-            next(self._passive_col_gen)
 
-        self._passive_collector.observe_transition(data=data, env_ids=env_ids)
-        ret = next(self._passive_col_gen)
+        ret = passive_collector.observe_transition(
+            data=data, env_ids=env_ids
+        )
 
         # we only do training once enough data has been collected
-        if not ret is None:
-            self._passive_col_gen = None
-
-            if training_enabled:
-                try:
-                    next(passive_trainer)
-                except StopIteration:
-                    raise StopIteration("The passive trainer has stopped.")
+        if not ret is None and training_enabled:
+            try:
+                next(passive_trainer)
+            except StopIteration:
+                raise StopIteration("The passive trainer has stopped.")

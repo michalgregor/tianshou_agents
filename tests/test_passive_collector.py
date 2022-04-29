@@ -36,24 +36,21 @@ class TestPassiveCollector(unittest.TestCase):
         )
 
         agent.train_collector.reset()
-
-        col_gen = passive_collector.make_collect(n_step=12)
-        next(col_gen)
+        passive_collector.make_collect(n_step=12)
 
         obs = agent.train_envs.reset()
         state = None
         done = None
 
         for istep in range(3):
-            act_batch, state = passive_collector.act(obs, state=state, done=done)
+            act_batch, state = passive_collector.compute_action(obs, state=state, done=done)
             ready_env_ids = passive_collector.ready_env_ids
             obs_next, rew, done, info = agent.train_envs.step(act_batch.act, ready_env_ids)
 
             transition = Batch(obs=obs, obs_next=obs_next, rew=rew, done=done, info=info)
             transition.update(**act_batch, **state)
 
-            passive_collector.observe_transition(transition)
-            ret = next(col_gen)
+            ret = passive_collector.observe_transition(transition)
 
             if istep < 2:
                 self.assertIsNone(ret)

@@ -1,4 +1,5 @@
 import unittest
+from tianshou_agents.components import passive_interface
 
 from tianshou_agents.methods.dqn import dqn_simple
 from tianshou.data import Batch
@@ -22,6 +23,7 @@ class TestComponentAgent(unittest.TestCase):
             test_collector=None,
             observation_space=self.env.observation_space[0],
             action_space=self.env.action_space[0],
+            passive_interface=dict(step_per_epoch=10)
         )
 
     def tearDown(self):
@@ -30,7 +32,6 @@ class TestComponentAgent(unittest.TestCase):
     def test_component_agent_construct(self):
         env = self.env
         agent = self.agent
-        agent.init_passive_training(step_per_epoch=10)
 
         state = None
         done = None
