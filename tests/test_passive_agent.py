@@ -1,6 +1,4 @@
 import unittest
-from tianshou_agents.components import passive_interface
-
 from tianshou_agents.methods.dqn import dqn_simple
 from tianshou.data import Batch
 from tianshou.env import DummyVectorEnv

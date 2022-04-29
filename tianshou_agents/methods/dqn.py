@@ -192,7 +192,6 @@ class DQNPolicyComponent(BasePolicyComponent):
 
 dqn_base_config = {
     # agent
-    'task': None,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'seed': None,
     # replay buffer
@@ -207,7 +206,6 @@ dqn_base_config = {
     'test_envs': 1,
     'test_env_class': None,
     'exploration_noise_test': True,
-    'test_task': None,
     # policy
     'policy': DQNPolicyComponent,
     'is_double': True,
@@ -228,7 +226,8 @@ dqn_base_config = {
     ),
     'optim': dict(lr=0.013),
     # trainer
-    'trainer': {'component_class': OffpolicyTrainer},
+    'trainer': {},
+    'trainer_class': OffpolicyTrainer,
     'max_epoch': 10,
     'step_per_epoch': 80000,
     'prefill_steps': None,

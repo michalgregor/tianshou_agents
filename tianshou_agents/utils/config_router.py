@@ -226,6 +226,9 @@ class DefaultConfigRouter(BaseConfigRouter):
 
     Agent-level args for the trainer:
 
+        trainer_class: The trainer class to use. This is routed to the
+            component_class argument of the trainer component.
+
         max_epoch (int, optional): The maximum number of epochs for training.
             The training process might be finished before reaching
             ``max_epoch`` if the stop criterion returns ``True``; this
@@ -444,6 +447,7 @@ class DefaultConfigRouter(BaseConfigRouter):
             'test_task': 'task',
         },
         'trainer': {
+            'trainer_class': 'component_class',
             'max_epoch': 'max_epoch',
             'step_per_epoch': 'step_per_epoch',
             'step_per_collect': 'step_per_collect',

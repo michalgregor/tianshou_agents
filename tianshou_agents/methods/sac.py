@@ -282,7 +282,6 @@ class SACPolicyComponent(BasePolicyComponent):
 
 sac_base_config = {
     # agent
-    'task': None,
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'seed': None,
     # replay buffer
@@ -292,13 +291,11 @@ sac_base_config = {
     'train_envs': 1,
     'train_env_class': None,
     'exploration_noise_train': True,
-    'task': None,
     # test collector
     'test_collector': {},
     'test_envs': 1,
     'test_env_class': None,
     'exploration_noise_test': True,
-    'test_task': None,
     # policy
     'policy': SACPolicyComponent,
     'exploration_noise': None,
@@ -317,7 +314,8 @@ sac_base_config = {
     'critic2_optim': dict(lr=3e-4),
     'alpha_optim': dict(lr=3e-4),
     # trainer
-    'trainer': {'component_class': OffpolicyTrainer},
+    'trainer': {},
+    'trainer_class': OffpolicyTrainer,
     'max_epoch': 10,
     'step_per_epoch': 80000,
     'prefill_steps': None,
