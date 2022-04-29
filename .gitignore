@@ -4,6 +4,7 @@
 /build/*
 /dist/*
 /log/*
+/tests/log/*
 /examples/log/*
 **/__pycache__/*
 *.egg-info/*
