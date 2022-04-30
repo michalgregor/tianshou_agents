@@ -267,6 +267,8 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         ] = None,
         device: Optional[Union[str, int, torch.device]] = None,
         seed: Optional[int] = None,
+        extract_obs_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
+        extract_act_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
         config_router: Optional[BaseConfigRouter] = None
     ):
         super().__init__()
@@ -291,6 +293,8 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             passive_interface=passive_interface,
             device=device,
             seed=seed,
+            extract_obs_shape=extract_obs_shape,
+            extract_act_shape=extract_act_shape,
             config_router=config_router
        )
 
@@ -302,8 +306,10 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
     def _construct_agent(
        self, replay_buffer, train_collector, test_collector,
        policy, logger, trainer, passive_interface, device, seed,
-       config_router
+       extract_obs_shape, extract_act_shape, config_router
     ):
+        self.extract_obs_shape = extract_obs_shape or extract_shape
+        self.extract_act_shape = extract_act_shape or extract_shape
         self.config_router = config_router or DefaultConfigRouter()
 
         # set up attributes for all the components
@@ -493,12 +499,12 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         """
         if observation_spec is None:
             if self.component_train_collector is None:
-                return None
+                observation_spec =  None
             else:
-                return self.component_train_collector.observation_shape
+                observation_spec = self.component_train_collector.observation_space
         
         if isinstance(observation_spec, gym.spaces.Space):
-            return extract_shape(observation_spec)
+            return self.extract_obs_shape(observation_spec)
         else:
             return observation_spec
 
@@ -530,12 +536,12 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         """
         if action_spec is None:
             if self.component_train_collector is None:
-                return None
+                action_spec = None
             else:
-                return self.component_train_collector.action_shape
+                action_spec = self.component_train_collector.action_space
         
         if isinstance(action_spec, gym.spaces.Space):
-            return extract_shape(action_spec)
+            return self.extract_act_shape(action_spec)
         else:
             return action_spec
 

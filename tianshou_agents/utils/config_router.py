@@ -1,4 +1,4 @@
-from typing import Optional, Union, Callable, Dict, Any
+from typing import Optional, Union, Callable, Dict, Any, Tuple
 from ..components.trainer import TrainerComponent
 from ..components.replay_buffer import BaseReplayBufferComponent, ReplayBufferComponent
 from ..components.collector import CollectorComponent
@@ -10,6 +10,7 @@ from ..utils import ConfigBuilder
 from tianshou.utils.logger.base import BaseLogger
 from tianshou.data import ReplayBuffer, Collector
 import torch
+import gym
 
 class BaseConfigRouter:
     """
@@ -109,7 +110,9 @@ class BaseConfigRouter:
         ] = None,
         # agent args
         device: Optional[Union[str, int, torch.device]] = None,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        extract_obs_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
+        extract_act_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
     ):
         return dict(
             replay_buffer=self.replay_buffer_builder.to_dict_config(replay_buffer),
@@ -120,7 +123,9 @@ class BaseConfigRouter:
             trainer=self.trainer_builder.to_dict_config(trainer),
             passive_interface=self.passive_interface_builder.to_dict_config(passive_interface),
             device=device,
-            seed=seed
+            seed=seed,
+            extract_obs_shape=extract_obs_shape,
+            extract_act_shape=extract_act_shape
         )
 
 class DefaultConfigRouter(BaseConfigRouter):
@@ -424,7 +429,9 @@ class DefaultConfigRouter(BaseConfigRouter):
         'trainer': 'trainer',
         'passive_interface': 'passive_interface',
         'device': 'device',
-        'seed': 'seed'
+        'seed': 'seed',
+        'extract_obs_shape': 'extract_obs_shape',
+        'extract_act_shape': 'extract_act_shape',
     }
 
     # subkey routing

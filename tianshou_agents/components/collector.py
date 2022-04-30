@@ -1,6 +1,6 @@
+from .env import setup_envs
 from .component import Component
 from .replay_buffer import BaseReplayBufferComponent
-from .env import setup_envs, extract_shape
 from tianshou.data import Collector, ReplayBuffer
 from tianshou.env import BaseVectorEnv
 from tianshou.policy import BasePolicy, RandomPolicy
@@ -104,14 +104,6 @@ class CollectorComponent(BaseCollectorComponent):
     @property
     def action_space(self):
         return None if self.collector.env is None else self.collector.env.action_space[0]
-
-    @property
-    def observation_shape(self):
-        return extract_shape(self.observation_space)
-
-    @property
-    def action_shape(self):
-        return extract_shape(self.action_space)
 
 class DummyCollector:
     def __init__(self, buffer):
