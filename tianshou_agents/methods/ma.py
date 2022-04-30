@@ -26,12 +26,15 @@ class MultiAgentPolicyManagerComponent(BasePolicyComponent):
         ]]] = None,
         component_class: Any = None,
         # method args
-        policies: Optional[List[Union[
-            BasePolicy,
-            BasePolicyComponent,
-            Callable[..., BasePolicyComponent],
-            Dict[str, Any]
-        ]]] = None,
+        policies: Optional[Union[
+            List[Union[
+                BasePolicy,
+                BasePolicyComponent,
+                Callable[..., BasePolicyComponent],
+                Dict[str, Any]
+            ]],
+            Callable[..., List[BasePolicyComponent]]
+        ]] = None,
         env: PettingZooEnv = None,
         ma_kwargs = None,
         method_name: str = "ma",
@@ -49,16 +52,27 @@ class MultiAgentPolicyManagerComponent(BasePolicyComponent):
 
         assert policies is not None, "either policies or config_arg must be provided"
 
-        self.policy_components = [
-            agent.config_router.policy_builder(
-                config=component_policy,
-                default_kwargs=dict(policy_kwargs,
+        if isinstance(policies, list):
+            self.policy_components = [
+                agent.config_router.policy_builder(
+                    config=component_policy,
+                    default_kwargs=dict(policy_kwargs,
+                        agent=agent,
+                        device=device,
+                        seed=seed
+                    )
+                ) for component_policy in policies
+            ]
+        elif callable(policies):
+            self.policy_components = policies(
+                **dict(policy_kwargs,
                     agent=agent,
                     device=device,
                     seed=seed
                 )
-            ) for component_policy in policies
-        ]
+            )
+        else:
+            raise ValueError("policies must be a list or a callable")
 
         if component_class is None:
             component_class = MultiAgentPolicyManager
