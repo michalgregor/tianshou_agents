@@ -20,7 +20,7 @@ class ScheduleCallback(Callback):
         self._state_objs.append('schedule')
 
     def __call__(self, epoch, env_step, gradient_step, agent):
-        val = self.schedule(epoch, env_step)
+        val = self.schedule(epoch, env_step, gradient_step, agent)
         self.setter(val)
 
 class SaveCallback(Callback):
