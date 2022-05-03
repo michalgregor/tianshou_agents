@@ -437,6 +437,9 @@ class DefaultConfigRouter(BaseConfigRouter):
     # subkey routing
     # component agent key: {kwargs key: component agent subkey}
     subkey_routing = {
+        'replay_buffer': {
+            'num_envs': 'num_envs',
+        },
         'train_collector': {
             'train_envs': 'env',
             'train_env_class': 'env_class',
@@ -480,6 +483,7 @@ class DefaultConfigRouter(BaseConfigRouter):
         'passive_interface': {
             'passive_collector': 'config_arg',
             'passive_trainer': 'trainer',
+            'num_envs': 'num_envs',
         },
         'logger': {
             'task_name': 'task_name',
