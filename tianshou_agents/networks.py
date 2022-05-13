@@ -10,6 +10,20 @@ import torch
 
 RLNetworkDataType = Union[np.ndarray, torch.Tensor]
 
+class ActionTop(nn.Module):
+    def __init__(self, input_shape, output_shape):
+        super().__init__()
+
+        if output_shape:
+            self.output_shape = output_shape
+            self.top = nn.Linear(input_shape, output_shape)
+        else:
+            self.output_shape = input_shape
+            self.top = nn.Identity()
+
+    def forward(self, x):
+        return self.top(x)
+
 class MLP(_tia_MLP):
     """Simple MLP backbone.
 
