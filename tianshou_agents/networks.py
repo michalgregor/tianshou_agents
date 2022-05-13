@@ -1,7 +1,7 @@
 from tianshou.utils.net.common import MLP as _tia_MLP, ModuleType
 from .utils import ConfigBuilder
 from typing import Any, Dict, List, Tuple, Union, Optional, Sequence, Callable, Type
-from collections import Iterable
+from collections.abc import Iterable
 from numbers import Number
 from torch import nn
 import numpy as np
