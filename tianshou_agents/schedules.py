@@ -14,13 +14,18 @@ class Schedule(StateDictObject):
     def get_value(self, step):
         raise NotImplementedError()
 
-    def __call__(self, epoch, env_step, gradient_step, agent):
-        if self._method == 'step' or self._method == 'env_step':
-            return self.get_value(env_step)
+    def __call__(self, agent):
+        if callable(self._method):
+            return self.get_value(self._method(agent))
+        elif self._method == 'step' or self._method == 'env_step':
+            return self.get_value(agent.env_step)
         elif self._method == 'epoch':
-            return self.get_value(epoch)
+            return self.get_value(agent.epoch)
         elif self._method == 'gradient_step':
-            return self.get_value(gradient_step)
+            return self.get_value(agent.gradient_step)
+        elif self._method == 'episode':
+            val = self.get_value(agent.episode)
+            return val
         else:
             raise ValueError(f"Unknown method '{self._method}'.")
 

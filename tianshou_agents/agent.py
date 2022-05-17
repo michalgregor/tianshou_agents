@@ -572,6 +572,10 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
     @property
     def epoch(self):
         return self.component_logger.epoch
+        
+    @property
+    def episode(self):
+        return self.component_logger.episode 
 
     @property
     def log_path(self):
