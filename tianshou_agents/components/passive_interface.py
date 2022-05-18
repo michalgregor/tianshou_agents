@@ -18,7 +18,7 @@ from tianshou.data import (
 from tianshou.data import Collector
 from tianshou.policy import BasePolicy, RandomPolicy
 from tianshou.trainer.utils import gather_info
-from tianshou.utils import tqdm_config, dummy_tqdm
+from tianshou.utils import tqdm_config, DummyTqdm
 
 class PassiveCollector:
     def __init__(
@@ -463,7 +463,7 @@ class StepWiseTrainer:
         if self.show_progress:
             progress = tqdm.tqdm
         else:
-            progress = dummy_tqdm
+            progress = DummyTqdm
 
         # perform n step_per_epoch
         with progress(
