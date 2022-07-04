@@ -1,4 +1,5 @@
 from tianshou.env import BaseVectorEnv, DummyVectorEnv, SubprocVectorEnv
+from collections.abc import Sequence
 import gym
 
 def extract_shape(space):
@@ -10,6 +11,24 @@ def extract_shape(space):
         shape = space.shape or space.n
 
     return shape
+
+def _validate_shape(shape, depth, max_depth=2):
+    if isinstance(shape, Sequence):
+        if depth >= max_depth:
+            return False
+        else:
+            for s in shape:
+                if not _validate_shape(s, depth + 1, max_depth):
+                    return False
+        return True
+
+    elif isinstance(shape, int):
+        return True
+    else:
+        return False
+
+def is_valid_shape(shape):
+    return _validate_shape(shape, 0)
 
 def setup_envs(task, env_class, envs, seed=None):
     if isinstance(envs, int):
