@@ -102,7 +102,7 @@ class RLNetwork(nn.Module):
     common interfaces useful for reinforcement learning.
 
     Args:
-        observation_shape (Union[int, Tuple[int], List[Tuple[int]]]):
+        observation_shape (Union[int, Tuple[int], List[Tuple[int]], Tuple]):
             The shape of the observations that are going to be presented 
             to the network. This is used when constructing the model here
             from the provided spec. It is not going to be important if
@@ -229,8 +229,6 @@ class RLNetwork(nn.Module):
         self.stateful = stateful
         self.flatten = flatten
 
-        self._verify_observation_shape(observation_shape)
-
         if self.flatten:
             input_shape = int(np.prod(observation_shape))
         else:
@@ -309,35 +307,6 @@ class RLNetwork(nn.Module):
             shape = (shape,)
 
         return shape
-
-    def _verify_observation_shape(self, observation_shape):
-        wrong = False
-
-        if isinstance(observation_shape, list):
-            for sh in observation_shape:
-                if isinstance(sh, tuple):
-                    for s in sh:
-                        if not isinstance(s, Number):
-                            wrong = True
-                            break
-                    
-                    if wrong: break
-                elif isinstance(sh, Number):
-                    pass
-                else:
-                    wrong = True
-        elif isinstance(observation_shape, Number):
-            pass
-        elif isinstance(observation_shape, tuple):
-            for s in observation_shape:
-                if not isinstance(s, Number):
-                    wrong = True
-                    break
-        else:
-            wrong = True
-
-        if wrong:
-            raise TypeError(f"Expected ``observation_shape`` to be a number, a tuple or a list of tuples, got '{observation_shape}'.")
 
     @property
     def output_dim(self):
