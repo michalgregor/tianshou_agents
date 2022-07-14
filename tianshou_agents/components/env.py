@@ -13,22 +13,53 @@ def extract_shape(space):
     return shape
 
 def _validate_shape(shape, depth, max_depth=2):
+    real_depth = depth
+
     if isinstance(shape, Sequence):
         if depth >= max_depth:
-            return False
+            return False, real_depth
         else:
             for s in shape:
-                if not _validate_shape(s, depth + 1, max_depth):
-                    return False
-        return True
+                valid, tmp_depth = _validate_shape(s, depth + 1, max_depth)
+                if tmp_depth > real_depth: real_depth = tmp_depth
+
+                if not valid:
+                    return False, real_depth
+
+        return True, real_depth
 
     elif isinstance(shape, int):
-        return True
+        return True, real_depth
     else:
-        return False
+        return False, real_depth
 
-def is_valid_shape(shape):
-    return _validate_shape(shape, 0)
+def is_valid_shape(shape, return_depth=False, max_depth=2):
+    """Returns whether shape represents a valid shape. A valid shape is one of:
+        - an integer;
+        - a sequence of integers;
+        - a sequence containing integers or sequences of integers;
+    i.e. there must be no more than 2 levels of nesting.
+
+    Args:
+        shape (_type_): _description_
+        return_depth (bool, optional): Whether to also return the depth of the
+            nested shape. Defaults to False.
+        max_depth (int, optional): The maximum depth of the nested shape.
+            Defaults to 2.       
+
+    Returns:
+        bool: whether shape is valid.
+
+        or 
+
+        Tuple[bool, int]: a (valid, depth) tuple if return_depth is True;
+            valid is a boolean indicating whether shape is valid, and depth
+            is an integer indicating the depth of the shape. If shape is
+            invalid, depth evaluation terminates as soon as the invalidity
+            is detected.
+    """
+    valid, depth = _validate_shape(shape, 0, max_depth=max_depth)
+    return (valid, depth) if return_depth else valid
 
 def setup_envs(task, env_class, envs, seed=None):
     if isinstance(envs, int):

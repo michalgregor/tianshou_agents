@@ -22,3 +22,9 @@ class TestValidShape(unittest.TestCase):
         self.assertFalse(is_valid_shape(((4, [4, 4]), 1, 1)))
         self.assertFalse(is_valid_shape("ttt"))
         self.assertFalse(is_valid_shape((1, 2, "ttt")))
+
+    def testShapeDepth(self):
+        self.assertEqual(is_valid_shape(4, return_depth=True), (True, 0))
+        self.assertEqual(is_valid_shape((4, 3, 2), return_depth=True), (True, 1))
+        self.assertEqual(is_valid_shape((4, [3, 5], 2), return_depth=True), (True, 2))
+        self.assertEqual(is_valid_shape((1.5, [3, 5], 2), return_depth=True), (False, 1))
