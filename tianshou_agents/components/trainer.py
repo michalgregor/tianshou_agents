@@ -460,11 +460,6 @@ class TrainerComponent(Component):
         # assert that max_epoch is not None
         assert params["max_epoch"] is not None
 
-        # the trainer increments max_epoch at the beginning of epoch and then
-        # runs the check; i.e. we need to make max_epoch 4 if we actually want
-        # to run 3 epochs
-        params["max_epoch"] += 1
-
         # construct the trainer
         component_class = params.pop("component_class", None)
         return component_class(**params)
