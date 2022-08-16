@@ -27,12 +27,12 @@ class DQNPolicyComponent(BasePolicyComponent):
             to be used by PyTorch tensors and networks.
         seed (int, optional): The random seed to use for the component.
 
-        observation_shape (Union[int, Sequence[int]], optional): The shape of the
-            observation space. If None, it will be automatically derived from
-            the environment in the train collector.
-        action_shape (Union[int, Sequence[int]], optional): The shape of the
-            action space. If None, it will be automatically derived from
-            the environment in the train collector.
+        observation_space (gym.spaces.Space, optional): The observation
+            space. If None, it will be automatically copied from the
+            environment in the train collector.
+        action_space (gym.spaces.Space, optional): The action space. If None,
+            it will be automatically copied from the environment in the train
+            collector.
         max_epoch (Optional[int]): The maximum number of epochs for the purposes
             of constructing epsilon schedules. If not specified, it will be
             automatically derived from the trainer component. If not specified
@@ -58,12 +58,12 @@ class DQNPolicyComponent(BasePolicyComponent):
         qnetwork (Union[torch.nn.Module, Callable[..., torch.nn.Module],
             Dict[str, Any]], optional): The torch Module to be used as the
             Q-Network. Can be either a torch Module or
-            callable(state_shape, action_shape, device) that returns a torch
+            callable(state_space, action_space, device) that returns a torch
             Module. If None, a default RLNetwork is constructed.
             
             Alternatively, this can be a dictionary, where the type key
             (RLNetwork by default) is a
-            callable(state_shape, action_shape, device, **qnetwork_params)
+            callable(state_space, action_space, device, **qnetwork_params)
             and the remaining keys are **qnetwork_params.
         optim (Union[Optimizer, Callable[..., Optimizer],
             Dict[str, Any]], optional): The optimizer to use for training the
@@ -117,8 +117,6 @@ class DQNPolicyComponent(BasePolicyComponent):
         eps_test: Union[float, Schedule, Callable[[int, int], Schedule]] = 0.01,
         observation_space: Optional[gym.spaces.Space] = None,
         action_space: Optional[gym.spaces.Space] = None,
-        observation_shape: Optional[Union[int, Sequence[int]]] = None,
-        action_shape: Optional[Union[int, Sequence[int]]] = None,
         **policy_kwargs
     ):
         super().__init__(method_name=method_name)
@@ -137,14 +135,11 @@ class DQNPolicyComponent(BasePolicyComponent):
             if component_class is None:
                 component_class = DQNPolicy
 
-            if observation_shape is None: observation_shape = observation_space
-            if action_shape is None: action_shape = action_space
-
             # the network
             qnetwork = self.construct_rlnet(
                 module=qnetwork,
-                observation_shape=agent.get_observation_shape(observation_shape),
-                action_shape=agent.get_action_shape(action_shape),
+                observation_space=agent.get_observation_space(observation_space),
+                action_space=agent.get_action_space(action_space),
                 device=device
             )
 

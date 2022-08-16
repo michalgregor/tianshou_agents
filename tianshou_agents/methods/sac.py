@@ -1,10 +1,9 @@
 from ..agent import ComponentAgent
 from ..components.preset import AgentPreset
-from ..networks import MLP
+from ..networks import MLP, ActorProb, Critic
 from ..components import BasePolicyComponent
 from tianshou.policy import SACPolicy, BasePolicy
 from tianshou.exploration import BaseNoise
-from tianshou.utils.net.continuous import ActorProb, Critic
 from typing import Any, Optional, Union, Callable, Dict
 from tianshou.trainer import OffpolicyTrainer
 from torch.optim import Optimizer
@@ -53,33 +52,33 @@ class SACPolicyComponent(BasePolicyComponent):
 
         actor (Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]], optional):
             The torch Module to be used as the actor. Can be either
-            a torch ``Module`` or ``callable(observation_shape, action_shape, device)``
+            a torch ``Module`` or ``callable(observation_space, action_space, device)``
             that returns a torch ``Module``. If None, a default RLNetwork
             is constructed.
             
             Alternatively, this can be a dictionary, where the ``type`` key
             (RLNetwork by default) is a
-            ``callable(observation_shape, action_shape, device, **qnetwork_params)``
+            ``callable(observation_space, action_space, device, **qnetwork_params)``
             and the remaining keys are ``**qnetwork_params``.
         critic1 (Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]], optional):
             The torch Module to be used as the first critic. Can be either
-            a torch ``Module`` or ``callable(observation_shape, action_shape, device)``
+            a torch ``Module`` or ``callable(observation_space, action_space, device)``
             that returns a torch ``Module``. If None, a default RLNetwork
             is constructed.
             
             Alternatively, this can be a dictionary, where the ``type`` key
             (RLNetwork by default) is a
-            ``callable(observation_shape, action_shape, device, **qnetwork_params)``
+            ``callable(observation_space, action_space, device, **qnetwork_params)``
             and the remaining keys are ``**qnetwork_params``.
         critic2 (Union[torch.nn.Module, Callable[..., torch.nn.Module], Dict[str, Any]], optional):
             The torch Module to be used as the second critic. Can be either
-            a torch ``Module`` or ``callable(observation_shape, action_shape, device)``
+            a torch ``Module`` or ``callable(observation_space, action_space, device)``
             that returns a torch ``Module``. If None, a default RLNetwork
             is constructed.
             
             Alternatively, this can be a dictionary, where the ``type`` key
             (RLNetwork by default) is a
-            ``callable(observation_shape, action_shape, device, **qnetwork_params)``
+            ``callable(observation_space, action_space, device, **qnetwork_params)``
             and the remaining keys are ``**qnetwork_params``.
         tau (float, optional): Param for the soft update of the target network.
         alpha (float, optional): [description]. The entropy regularization
@@ -90,7 +89,7 @@ class SACPolicyComponent(BasePolicyComponent):
         target_entropy (float, optional): Specifies the target entropy;
             if not None, this automatically toggles on auto_alpha=True;
             if None, and auto_alpha == True, it is set to
-            -np.prod(self.action_space.shape).
+            -gym.spaces.flatdim(self.action_space).
         exploration_noise (BaseNoise, optional):
             Noise added to actions for exploration. This is useful when
             solving hard-exploration problems. By default this is None,
@@ -196,23 +195,20 @@ class SACPolicyComponent(BasePolicyComponent):
             if component_class is None:
                 component_class = SACPolicy
 
-            action_space = agent.get_action_space(action_space)
-            action_shape = agent.get_action_shape(action_space)
-            max_action = np.max(action_space.high)
-
             observation_space = agent.get_observation_space(observation_space)
-            observation_shape = agent.get_observation_shape(observation_space)
+            action_space = agent.get_action_space(action_space)
+            max_action = np.max(action_space.high)
 
             # actor
             self.actor_net = self.construct_rlnet(
                 module=actor,
-                observation_shape=observation_shape,
-                action_shape=0,
+                observation_space=observation_space,
+                action_space=None,
                 device=device
             )
 
             self.actor = ActorProb(
-                self.actor_net, action_shape,
+                self.actor_net, gym.spaces.flatten_space(action_space).shape,
                 max_action=max_action, device=device, unbounded=True
             ).to(device)
 
@@ -223,8 +219,8 @@ class SACPolicyComponent(BasePolicyComponent):
             # critic 1
             self.critic1_net = self.construct_rlnet(
                 module=critic1,
-                observation_shape=observation_shape,
-                action_shape=action_shape,
+                observation_space=observation_space,
+                action_space=action_space,
                 actions_as_input=True,
                 device=device
             )
@@ -239,8 +235,8 @@ class SACPolicyComponent(BasePolicyComponent):
             # critic 2
             self.critic2_net = self.construct_rlnet(
                 module=critic2,
-                observation_shape=observation_shape,
-                action_shape=action_shape,
+                observation_space=observation_space,
+                action_space=action_space,
                 actions_as_input=True,
                 device=device
             )
@@ -257,7 +253,7 @@ class SACPolicyComponent(BasePolicyComponent):
 
             if auto_alpha or not target_entropy is None:
                 if target_entropy is None:
-                    target_entropy = -np.prod(action_space.shape)
+                    target_entropy = -gym.spaces.flatdim(action_space)
 
                 log_alpha = torch.zeros(1, requires_grad=True, device=device)
                 self.alpha_optim = self.construct_optim(

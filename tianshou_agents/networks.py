@@ -1,13 +1,17 @@
+import warnings
 from tianshou.utils.net.common import MLP as _tia_MLP, ModuleType
+from tianshou.utils.net.continuous import ActorProb
 from .utils import ConfigBuilder
-from typing import Any, Dict, List, Tuple, Union, Optional, Sequence, Callable, Type
-from collections.abc import Iterable
+from .components.env import extract_shape, batch_flatten, construct_space, batch2tensor
+from typing import Any, Dict, List, Tuple, Union, Optional, Sequence, Callable, Type, TypeVar
 from numbers import Number
 from torch import nn
 import numpy as np
 import warnings
 import torch
+import gym
 
+T = TypeVar("T")
 RLNetworkDataType = Union[np.ndarray, torch.Tensor]
 
 class ActionTop(nn.Module):
@@ -27,8 +31,8 @@ class ActionTop(nn.Module):
 class MLP(_tia_MLP):
     """Simple MLP backbone.
 
-    Create a MLP of size input_shape * hidden_sizes[0] * hidden_sizes[1] * ...
-    * hidden_sizes[-1] * output_shape
+    Create a MLP of size input space shape * hidden_sizes[0] * hidden_sizes[1] * ...
+    * hidden_sizes[-1] * action space shape
 
     :param int input_shape: dimension of the input vector.
     :param int output_shape: dimension of the output vector. If set to 0, there
@@ -58,7 +62,7 @@ class MLP(_tia_MLP):
         output_shape: Union[
             int,
             Sequence[int]
-         ] = 0,
+         ] = None,
         hidden_sizes: Sequence[int] = (),
         norm_layer: Optional[Union[ModuleType, Sequence[ModuleType]]] = None,
         activation: Optional[Union[ModuleType, Sequence[ModuleType]]] = nn.ReLU,
@@ -72,6 +76,9 @@ class MLP(_tia_MLP):
 
         if isinstance(output_shape, Number):
             output_shape = (output_shape,)
+
+        if output_shape is None:
+            output_shape = (0,)
 
         if flatten_input:
             input_dim = int(np.prod(input_shape))
@@ -102,24 +109,39 @@ class RLNetwork(nn.Module):
     common interfaces useful for reinforcement learning.
 
     Args:
-        observation_shape (Union[int, Tuple[int], List[Tuple[int]], Tuple]):
-            The shape of the observations that are going to be presented 
+        observation_space (Union[gym.spaces.Space, Tuple[int]]):
+            The space of observations that are going to be presented 
             to the network. This is used when constructing the model here
-            from the provided spec. It is not going to be important if
+            from the provided spec. It is not going to be taken into account if
             a pre-constructed module is provided.
 
-        action_shape: The requisite action shape (shape of the network's
-            output). Note that if this is set to zero, that means the
-            model itself needs to determine the size of its output because
-            its last layers is going to be a hidden layer and some more
-            layers are going to be stacked on top of it. You can implement
-            that e.g. by checking for the number of outputs and only
-            including the final layer if the number is not 0, e.g.:
+            Optionally, one may pass a shape instead – in that case a space
+            will be constructed automatically using construct_space.
 
-                if self.num_outputs > 0:
-                    self.dense3 = nn.Linear(256, num_outputs)
-                    self.relu3 = nn.ReLU()
+        action_space (gym.spaces.Space): The requisite action space (related
+            to the shape of the network's output). Note that if this is set to
+            None, that means the model itself needs to determine the size of
+            its output because its last layers is going to be a hidden layer
+            and some more layers are going to be stacked on top of it. For that
+            reason, the output_shape passed to the model is also going to be
+            None and the model needs to handle it accordingly, e.g. using the
+            ActionTop convenience module:
 
+                self.dense = nn.Linear(256, 128)
+                self.relu = nn.ReLU()
+
+                self.action_top = ActionTop(128, output_shape)
+                self.output_shape = self.action_top.output_shape
+            
+            or by checking the output_shape manually along the lines of:
+
+                if not self.output_shape is None:
+                    self.dense2 = nn.Linear(128, output_shape)
+                    self.relu2 = nn.ReLU()
+                    self.output_shape = output_shape
+                else:
+                    self.output_shape = 128
+            
         model (Union[
             nn.Module,
             Callable[..., nn.Module],
@@ -134,7 +156,7 @@ class RLNetwork(nn.Module):
             module's constructor:
                 * input_shape: the shape of the input;
                 * output_shape: the shape of the output (check action_shape
-                    to see how output_shape=0 is to be handled);
+                    to see how output_shape=None is to be handled);
                 * device: the torch device that the model should be using;
                 * **model_kwargs: any other keyword arguments passed to
                   RLNetwork end up here;
@@ -182,6 +204,10 @@ class RLNetwork(nn.Module):
             is inferred from the action space, if possible, or taken from
             the model.output_shape attribute if it exists.
 
+        extract_obs_shape (Callable[[gym.spaces.Space], Tuple[int, ...]], optional):
+            A callable that takes an observation space and returns a tuple
+            of ints representing the shape of the observation.
+
         **model_kwargs: Any other keyword arguments are passed to the
             model's constructor (unless the model is pre-constructed
             in which case they are ignored).
@@ -195,15 +221,8 @@ class RLNetwork(nn.Module):
 
     def __init__(
         self,
-        observation_shape: Union[
-            int,
-            Tuple[int],
-            List[Tuple[int]]
-        ],
-        action_shape: Union[
-            int,
-            Sequence[int]
-        ] = 0,
+        observation_space: Union[gym.spaces.Space, Tuple[int]],
+        action_space: Union[gym.spaces.Space, Tuple[int]] = None,
         model: Optional[Union[
             nn.Module,
             Callable[..., nn.Module],
@@ -211,6 +230,7 @@ class RLNetwork(nn.Module):
         ]] = None,
         device: Union[str, int, torch.device] = "cpu",
         flatten: bool = True,
+        extract_tensors: bool = True,
         stateful: bool = False,
         softmax: bool = False,
         actions_as_input: bool = False,
@@ -220,6 +240,7 @@ class RLNetwork(nn.Module):
             Dict[str, Any]
         ]] = None,
         model_output_shape = None,
+        extract_obs_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
         **model_kwargs
     ) -> None:
         super().__init__()
@@ -228,28 +249,43 @@ class RLNetwork(nn.Module):
         self.num_atoms = num_atoms
         self.stateful = stateful
         self.flatten = flatten
+        self.extract_tensors = extract_tensors
+        self.actions_as_input = actions_as_input
+
+        if isinstance(observation_space, gym.spaces.Space):
+            self.observation_space = observation_space
+        else:
+            self.observation_space = construct_space(observation_space)
+
+        if isinstance(action_space, gym.spaces.Space):
+            self.action_space = action_space
+        else:
+            self.action_space = construct_space(action_space)
+
+        if extract_obs_shape is None:
+            extract_obs_shape = extract_shape
 
         if self.flatten:
-            input_shape = int(np.prod(observation_shape))
+            input_shape = gym.spaces.flatdim(self.observation_space)
         else:
-            input_shape = observation_shape
+            input_shape = extract_obs_shape(self.observation_space)
 
-        action_dim = int(np.prod(action_shape)) * self.num_atoms
+        if self.action_space is None:
+            action_dim = None
+        else:
+            action_dim = gym.spaces.flatdim(self.action_space) * self.num_atoms
         
-        if actions_as_input:
+        if self.actions_as_input and not action_dim is None:
             if self.flatten:
                 input_shape += action_dim
             else:
-                if isinstance(input_shape, list):
-                    input_shape += [action_dim]
-                else:
-                    input_shape = [input_shape, action_dim]
+                input_shape = [input_shape, action_dim]
 
         self.use_dueling = dueling_param is not None
 
         if self.use_dueling:
-            output_shape = 0
-        elif actions_as_input:
+            output_shape = None
+        elif self.actions_as_input:
             output_shape = 1
         else:
             output_shape = action_dim
@@ -270,7 +306,9 @@ class RLNetwork(nn.Module):
                 output_shape = getattr(self.model, 'output_shape', None)
 
         if not output_shape:
-            raise ValueError("The output_shape of a model cannot be zero or None; make sure that you check output_shape if you are using a custom architecture.")
+            raise ValueError("The output_shape of a model cannot be zero "
+                "or None; make sure that you check output_shape if you are "
+                "using a custom architecture.")
 
         if self.use_dueling:  # dueling DQN
             if action_dim == 0:
@@ -279,7 +317,7 @@ class RLNetwork(nn.Module):
             q_kwargs, v_kwargs = dueling_param  # type: ignore
             q_output_shape, v_output_shape = 0, 0
 
-            if not actions_as_input:
+            if not self.actions_as_input:
                 q_output_shape, v_output_shape = action_dim, num_atoms
 
             q_kwargs: Dict[str, Any] = {
@@ -293,20 +331,10 @@ class RLNetwork(nn.Module):
             self.Q = self.Q.to(device)
             self.V = self.V.to(device)
 
-        if not action_shape:
+        if self.num_atoms > 1:
+            self.output_shape = tuple(output_shape) + (self.num_atoms,)
+        else:
             self.output_shape = output_shape
-        elif self.num_atoms > 1:
-            self.output_shape = (int(np.prod(action_shape)), self.num_atoms)
-        else:
-            self.output_shape = int(np.prod(action_shape))
-
-    def _normalize_shape(self, shape):
-        if isinstance(shape, Iterable):
-            shape = tuple(shape)
-        else:
-            shape = (shape,)
-
-        return shape
 
     @property
     def output_dim(self):
@@ -314,24 +342,48 @@ class RLNetwork(nn.Module):
 
     def forward(
         self,
-        args: Union[Tuple[RLNetworkDataType], List[RLNetworkDataType], RLNetworkDataType], 
+        obs: Union[Sequence[RLNetworkDataType], RLNetworkDataType],
+        act: Optional[Union[Sequence[RLNetworkDataType], RLNetworkDataType]] = None,
         state: Any = None,
-        info: Dict[str, Any] = {},
+        info: Dict[str, Any] = None,
+        **kwargs
     ) -> Tuple[torch.Tensor, Any]:
         """Mapping: s -> flatten (inside MLP)-> logits."""
-        if not isinstance(args, tuple) and not isinstance(args, list):
-            args = [args]
-        args = tuple(torch.as_tensor(s, device=self._device, dtype=torch.float32)
-                        for s in args)
 
+        if info is None:
+            info = {}
+
+        if not self.actions_as_input and not act is None:
+            act = None
+            warnings.warn(
+                "The actions_as_input flag is False, but act is not None. "
+                "Note that act will be ignored."
+            )
+            
         if self.flatten:
-            args = [torch.flatten(s, start_dim=1) for s in args]
-            args = (torch.cat(args),)
+            inputs = batch_flatten(self.observation_space, obs)
+            inputs = torch.as_tensor(inputs, device=self._device)
+        else:
+            inputs = batch2tensor(self.observation_space, obs, device=self._device)
+            
+        if not act is None:
+            if self.flatten:
+                flat_action = batch_flatten(self.action_space, act)
+                flat_action = torch.as_tensor(flat_action, device=self._device)
+                inputs = torch.cat((inputs, flat_action), dim=1)
+                act = None
+            else:
+                act = batch2tensor(self.action_space, act, device=self._device)
+
+        if act is None:
+            args = (inputs,)
+        else:
+            args = (inputs, act)
 
         if self.stateful:
-            logits, state = self.model(*args, state=state)
+            logits, state = self.model(*args, state=state, **kwargs)
         else:
-            logits = self.model(*args)
+            logits = self.model(*args, **kwargs)
 
         batch_size = logits.shape[0]
         if self.use_dueling:  # Dueling DQN
@@ -346,3 +398,62 @@ class RLNetwork(nn.Module):
             logits = torch.softmax(logits, dim=-1)
 
         return logits, state
+
+class Critic(nn.Module):
+    """Simple critic network. Will create an actor operated in continuous \
+    action space with structure of preprocess_net ---> 1(q value).
+
+    :param preprocess_net: a self-defined preprocess_net which output a
+        flattened hidden state.
+    :param hidden_sizes: a sequence of int for constructing the MLP after
+        preprocess_net. Default to empty sequence (where the MLP now contains
+        only a single linear layer).
+    :param int preprocess_net_output_dim: the output dimension of
+        preprocess_net.
+    :param linear_layer: use this module as linear layer. Default to nn.Linear.
+    :param bool flatten_input: whether to flatten input data for the last layer.
+        Default to True.
+
+    For advanced usage (how to customize the network), please refer to
+    :ref:`build_the_network`.
+
+    .. seealso::
+
+        Please refer to :class:`~tianshou.utils.net.common.Net` as an instance
+        of how preprocess_net is suggested to be defined.
+    """
+
+    def __init__(
+        self,
+        preprocess_net: nn.Module,
+        hidden_sizes: Sequence[int] = (),
+        device: Union[str, int, torch.device] = "cpu",
+        preprocess_net_output_dim: Optional[int] = None,
+        linear_layer: Type[nn.Linear] = nn.Linear,
+        flatten_input: bool = True,
+    ) -> None:
+        super().__init__()
+        self.device = device
+        self.preprocess = preprocess_net
+        self.output_dim = 1
+        input_dim = getattr(preprocess_net, "output_dim", preprocess_net_output_dim)
+        self.last = MLP(
+            input_dim,  # type: ignore
+            1,
+            hidden_sizes,
+            device=self.device,
+            linear_layer=linear_layer,
+            flatten_input=flatten_input,
+        )
+
+    def forward(
+        self,
+        obs: Union[np.ndarray, torch.Tensor],
+        act: Optional[Union[np.ndarray, torch.Tensor]] = None,
+        info: Dict[str, Any] = {},
+    ) -> torch.Tensor:
+        """Mapping: (s, a) -> logits -> Q(s, a)."""
+        # note: casting to tensors is to be handled by preprocess_net
+        logits, hidden = self.preprocess(obs=obs, act=act, info=info)
+        logits = self.last(logits)
+        return logits

@@ -10,7 +10,6 @@ from tianshou.data import ReplayBuffer, Collector, Batch
 from tianshou.policy import BasePolicy
 from tianshou.trainer import BaseTrainer
 from tianshou.utils.logger.base import BaseLogger
-from .components.env import extract_shape
 
 from typing import Optional, Union, Callable, Dict, Any, List, Tuple
 import numpy as np
@@ -267,8 +266,6 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
         ] = None,
         device: Optional[Union[str, int, torch.device]] = None,
         seed: Optional[int] = None,
-        extract_obs_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
-        extract_act_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
         config_router: Optional[BaseConfigRouter] = None
     ):
         super().__init__()
@@ -293,8 +290,6 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             passive_interface=passive_interface,
             device=device,
             seed=seed,
-            extract_obs_shape=extract_obs_shape,
-            extract_act_shape=extract_act_shape,
             config_router=config_router
        )
 
@@ -306,10 +301,8 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
     def _construct_agent(
        self, replay_buffer, train_collector, test_collector,
        policy, logger, trainer, passive_interface, device, seed,
-       extract_obs_shape, extract_act_shape, config_router
+       config_router
     ):
-        self.extract_obs_shape = extract_obs_shape or extract_shape
-        self.extract_act_shape = extract_act_shape or extract_shape
         self.config_router = config_router or DefaultConfigRouter()
 
         # set up attributes for all the components
@@ -487,27 +480,6 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
 
         return observation_space
 
-    def get_observation_shape(self, observation_spec=None):
-        """Returns the shape of the observation space from the train collector
-        or None if a train collector is not available.
-
-        Optionally, an observation_spec argument can be passed: the function
-        is going to check if it is None; if not, it is going to be used
-        in place of the collector's observation space. If it is a gym space,
-        its shape is going to be extracted; if not, it is going to be returned
-        directly. 
-        """
-        if observation_spec is None:
-            if self.component_train_collector is None:
-                observation_spec =  None
-            else:
-                observation_spec = self.component_train_collector.observation_space
-        
-        if isinstance(observation_spec, gym.spaces.Space):
-            return self.extract_obs_shape(observation_spec)
-        else:
-            return observation_spec
-
     def get_action_space(self, action_space):
         """Returns the action space from the train collector or None if
         a train collector is not available.
@@ -524,27 +496,6 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
 
         return action_space
 
-    def get_action_shape(self, action_spec=None):
-        """Returns the shape of the action space from the train collector
-        or None if a train collector is not available.
-
-        Optionally, an action_spec argument can be passed: the function
-        is going to check if it is None; if not, it is going to be used
-        in place of the collector's action space. If it is a gym space,
-        its shape is going to be extracted; if not, it is going to be returned
-        directly. 
-        """
-        if action_spec is None:
-            if self.component_train_collector is None:
-                action_spec = None
-            else:
-                action_spec = self.component_train_collector.action_space
-        
-        if isinstance(action_spec, gym.spaces.Space):
-            return self.extract_act_shape(action_spec)
-        else:
-            return action_spec
-
     @property
     def observation_space(self):
         return self.get_observation_space()
@@ -552,14 +503,6 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
     @property
     def action_space(self):
         return self.get_action_space()
-
-    @property
-    def observation_shape(self):
-        return self.get_observation_shape()
-
-    @property
-    def action_shape(self):
-        return self.get_action_shape()
 
     @property
     def env_step(self):
@@ -639,7 +582,7 @@ class ComponentAgent(BaseAgent, BasePassiveAgent):
             A trainer.
         """
         return self.component_trainer.make_trainer(agent=self, **kwargs)
-       
+
     def train(self, **kwargs) -> Dict[str, Union[float, str]]:
         """Runs training. The keyword arguments (if any) are used to
         override the arguments originally passed to the trainer.

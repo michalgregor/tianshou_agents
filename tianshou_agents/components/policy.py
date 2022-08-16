@@ -1,8 +1,9 @@
 from ..utils import ConfigBuilder
 from .component import Component
-from typing import Union, List, Tuple, Sequence
+from typing import Union, Sequence
 from ..networks import RLNetwork
 import torch
+import gym
 
 class BasePolicyComponent(Component):
     """The base of policy components.
@@ -42,16 +43,16 @@ class BasePolicyComponent(Component):
     def construct_rlnet(
         self,
         module,
-        observation_shape: Union[int, Tuple[int], List[Tuple[int]]],
-        action_shape: Union[int, Sequence[int]],
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
         device: Union[str, int, torch.device],
         **model_kwargs
     ):
         module = self.module_builder(
             config=module,
             default_kwargs=dict(model_kwargs,
-                observation_shape=observation_shape,
-                action_shape=action_shape,
+                observation_space=observation_space,
+                action_space=action_space,
                 device=device
             )
         )

@@ -1,22 +1,17 @@
-import gym
 import time
 import torch
 import warnings
 import numpy as np
-from functools import partial
 from typing import List, Optional, Callable, Union, Dict, Any, Tuple
 from collections import deque
 import tqdm
-
 from .component import Component
-from .env import setup_envs, extract_shape
 
 from tianshou.data import (
     VectorReplayBuffer, ReplayBuffer, CachedReplayBuffer,
     ReplayBufferManager, Batch, to_numpy
 )
-from tianshou.data import Collector
-from tianshou.policy import BasePolicy, RandomPolicy
+from tianshou.policy import BasePolicy
 from tianshou.trainer.utils import gather_info
 from tianshou.utils import tqdm_config
 

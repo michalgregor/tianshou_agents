@@ -110,9 +110,7 @@ class BaseConfigRouter:
         ] = None,
         # agent args
         device: Optional[Union[str, int, torch.device]] = None,
-        seed: Optional[int] = None,
-        extract_obs_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
-        extract_act_shape: Callable[[gym.spaces.Space], Tuple[int, ...]] = None,
+        seed: Optional[int] = None
     ):
         return dict(
             replay_buffer=self.replay_buffer_builder.to_dict_config(replay_buffer),
@@ -123,9 +121,7 @@ class BaseConfigRouter:
             trainer=self.trainer_builder.to_dict_config(trainer),
             passive_interface=self.passive_interface_builder.to_dict_config(passive_interface),
             device=device,
-            seed=seed,
-            extract_obs_shape=extract_obs_shape,
-            extract_act_shape=extract_act_shape
+            seed=seed
         )
 
 class DefaultConfigRouter(BaseConfigRouter):
@@ -429,9 +425,7 @@ class DefaultConfigRouter(BaseConfigRouter):
         'trainer': 'trainer',
         'passive_interface': 'passive_interface',
         'device': 'device',
-        'seed': 'seed',
-        'extract_obs_shape': 'extract_obs_shape',
-        'extract_act_shape': 'extract_act_shape',
+        'seed': 'seed'
     }
 
     # subkey routing
