@@ -264,6 +264,9 @@ class DefaultConfigRouter(BaseConfigRouter):
         verbose (bool): whether to print information when training.
             Defaults to True.
 
+        show_progress (bool): whether to display a progress bar when training.
+            Defaults to True.
+
         reward_metric: a function with signature
             ``f(rewards: np.ndarray with shape (num_episode, agent_num)) -> np.ndarray
             with shape (num_episode,)``, used in multi-agent RL. We need to 
@@ -459,6 +462,7 @@ class DefaultConfigRouter(BaseConfigRouter):
             'update_per_step': 'update_per_step',
             'episode_per_test': 'episode_per_test',
             'verbose': 'verbose',
+            'show_progress': 'show_progress',
             'reward_metric': 'reward_metric',
             'batch_size': 'batch_size',
             'repeat_per_collect': 'repeat_per_collect',

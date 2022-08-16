@@ -15,7 +15,7 @@ class DummyStatefulCallback(Callback):
         self.state = state
         self._state_objs.append('state')
 
-    def __call__(self, epoch, env_step, gradient_step, agent):
+    def __call__(self, agent):
         pass
 
 class TestAgentCheckpointMixin:

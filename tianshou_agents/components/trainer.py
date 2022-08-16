@@ -472,11 +472,11 @@ class TrainerComponent(Component):
     # callbacks
     def _save_best_fn(self, agent, policy):
         for callback in self.save_best_callbacks:
-            callback(agent.logger.epoch, agent.logger.env_step, agent.logger.gradient_step, agent)
+            callback(agent)
 
     def _save_checkpoint_fn(self, agent, epoch, env_step, gradient_step):
         for callback in self.save_checkpoint_callbacks:
-            callback(agent.logger.epoch, agent.logger.env_step, agent.logger.gradient_step, agent)
+            callback(agent)
 
     def _stop_fn(self, agent, reward_threshold, mean_rewards):
         if callable(self.stop_criterion):
@@ -496,11 +496,11 @@ class TrainerComponent(Component):
 
     def _train_fn(self, agent, epoch, env_step):
         for callback in self.train_callbacks:
-            callback(agent.epoch, agent.env_step, agent.logger.gradient_step, agent)
+            callback(agent)
 
     def _test_fn(self, agent, epoch, env_step):
         for callback in self.test_callbacks:
-            callback(agent.epoch, agent.env_step, agent.logger.gradient_step, agent)
+            callback(agent)
 
     def run_train_callbacks(self, agent):
         self._train_fn(agent, None, None)
